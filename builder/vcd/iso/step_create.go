@@ -11,3 +11,7 @@ type CreateConfig struct {
 	// Defaults to `otherGuest`.
 	GuestOSType string `mapstructure:"guest_os_type"`
 }
+
+func (c *CreateConfig) Prepare() []error {
+	var errs []error
+}
