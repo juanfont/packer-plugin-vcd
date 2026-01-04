@@ -8,16 +8,15 @@ import (
 	"os"
 
 	"github.com/juanfont/packer-plugin-vcd/builder/vcd/iso"
-	scaffoldingVersion "github.com/juanfont/packer-plugin-vcd/version"
+	"github.com/juanfont/packer-plugin-vcd/version"
 
 	"github.com/hashicorp/packer-plugin-sdk/plugin"
 )
 
 func main() {
 	pps := plugin.NewSet()
-	pps.RegisterBuilder("my-builder", new(iso.Builder))
-	// pps.RegisterPostProcessor("my-post-processor", new(vcdPP.PostProcessor))
-	pps.SetVersion(scaffoldingVersion.PluginVersion)
+	pps.RegisterBuilder("iso", new(iso.Builder))
+	pps.SetVersion(version.PluginVersion)
 	err := pps.Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
