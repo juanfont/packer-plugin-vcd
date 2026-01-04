@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/communicator"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
+	"github.com/juanfont/packer-plugin-vcd/builder/vcd/driver"
 )
 
 type ShutdownConfig struct {
@@ -48,7 +49,7 @@ type StepShutdown struct {
 
 func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packersdk.Ui)
-	vm := state.Get("vm").(*driver.VirtualMachineDriver)
+	vm := state.Get("vm").(driver.VirtualMachine)
 
 	if off, _ := vm.IsPoweredOff(); off {
 		ui.Say("Virtual machine is already powered off.")
@@ -77,7 +78,7 @@ func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multis
 		}
 	} else {
 		ui.Sayf("Please shutdown virtual machine within %s.", s.Config.Timeout)
-		err := vm.StartShutdown()
+		err := vm.Shutdown()
 		if err != nil {
 			state.Put("error", fmt.Errorf("error shutting down virtual machine: %v", err))
 			return multistep.ActionHalt
@@ -85,7 +86,7 @@ func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	log.Printf("[INFO] Waiting a maximum of %s for shutdown to complete.", s.Config.Timeout)
-	err := vm.WaitForShutdown(ctx, s.Config.Timeout)
+	err := vm.WaitForPowerOff(ctx, s.Config.Timeout)
 	if err != nil {
 		state.Put("error", err)
 		return multistep.ActionHalt
