@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/hcl/v2/hcldec"
+	"github.com/hashicorp/packer-plugin-sdk/communicator"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
@@ -61,19 +62,28 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			Url:         b.config.ISOUrls,
 		},
 
-		// Step 3: Create temporary catalog (or use existing)
+		// Step 3: Discover HTTP IP for preseed/kickstart server
+		&common.StepHTTPIPDiscover{
+			HTTPIP:        b.config.HTTPConfig.HTTPAddress,
+			HTTPInterface: b.config.HTTPConfig.HTTPInterface,
+		},
+
+		// Step 4: Start HTTP server for preseed/kickstart files
+		commonsteps.HTTPServerFromHTTPConfig(&b.config.HTTPConfig),
+
+		// Step 5: Create temporary catalog (or use existing)
 		&common.StepCreateTempCatalog{
 			Config:  &b.config.CatalogConfig,
 			VDCName: b.config.LocationConfig.VDC,
 		},
 
-		// Step 4: Upload ISO to catalog (with caching support)
+		// Step 6: Upload ISO to catalog (with caching support)
 		&common.StepUploadISO{
 			CacheISO:       b.config.CatalogConfig.CacheISO,
 			CacheOverwrite: b.config.CatalogConfig.CacheOverwrite,
 		},
 
-		// Step 5: Resolve or create vApp
+		// Step 7: Resolve or create vApp
 		&common.StepResolveVApp{
 			VDCName:     b.config.LocationConfig.VDC,
 			VAppName:    b.config.LocationConfig.VApp,
@@ -81,7 +91,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			CreateVApp:  b.config.LocationConfig.CreateVApp,
 		},
 
-		// Step 6: Create empty VM
+		// Step 8: Create empty VM
 		&StepCreateVM{
 			VMName:           b.config.LocationConfig.VMName,
 			Description:      b.config.CreateConfig.Description,
@@ -93,36 +103,47 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			DiskSizeMB:       b.config.CreateConfig.DiskSizeMB,
 		},
 
-		// Step 7: Configure hardware (CPU, memory)
+		// Step 9: Configure hardware (CPU, memory)
 		&StepHardware{
 			Config: &b.config.HardwareConfig,
 		},
 
-		// Step 8: Mount ISO to VM
+		// Step 10: Mount ISO to VM
 		&common.StepMountISO{},
 
-		// Step 9: Power on VM
+		// Step 11: Power on VM
 		&common.StepRun{
 			Config: &b.config.RunConfig,
 		},
 
-		// Step 10: Boot command via WMKS console
+		// Step 12: Boot command via WMKS console
 		&common.StepBootCommand{
 			Config: &b.config.BootCommandConfig,
 			VMName: b.config.LocationConfig.VMName,
 			Ctx:    b.config.ctx,
 		},
 
-		// TODO: Future steps for Phase 3:
-		// - HTTP server for kickstart files
-		// - Provisioners (SSH/WinRM communicator)
+		// Step 13: Wait for VM to get IP address
+		&common.StepWaitForIP{
+			Config: &b.config.WaitIpConfig,
+		},
 
-		// Step 11: Shutdown VM
+		// Step 14: Connect to VM via SSH/WinRM
+		&communicator.StepConnect{
+			Config:    &b.config.Comm,
+			Host:      common.CommHost(b.config.Comm.Host()),
+			SSHConfig: b.config.Comm.SSHConfigFunc(),
+		},
+
+		// Step 15: Run provisioners
+		&commonsteps.StepProvision{},
+
+		// Step 16: Shutdown VM
 		&common.StepShutdown{
 			Config: &b.config.ShutdownConfig,
 		},
 
-		// Step 12: Export to catalog (optional)
+		// Step 17: Export to catalog (optional)
 		&common.StepExportToCatalog{
 			Config: b.config.ExportToCatalog,
 		},

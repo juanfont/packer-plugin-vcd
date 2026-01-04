@@ -32,6 +32,7 @@ type Config struct {
 	// common.CDRomConfig                `mapstructure:",squash"` // we will probably need this
 	common.RemoveNetworkAdapterConfig `mapstructure:",squash"`
 	common.RunConfig                  `mapstructure:",squash"`
+	common.WaitIpConfig               `mapstructure:",squash"`
 	Comm                              communicator.Config `mapstructure:",squash"`
 
 	common.ShutdownConfig `mapstructure:",squash"`
@@ -81,6 +82,7 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 	errs = packersdk.MultiErrorAppend(errs, c.BootCommandConfig.Prepare(&c.ctx)...)
 	errs = packersdk.MultiErrorAppend(errs, c.HTTPConfig.Prepare(&c.ctx)...)
 	errs = packersdk.MultiErrorAppend(errs, c.CDConfig.Prepare(&c.ctx)...)
+	errs = packersdk.MultiErrorAppend(errs, c.WaitIpConfig.Prepare()...)
 	errs = packersdk.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)
 
 	shutdownWarnings, shutdownErrs := c.ShutdownConfig.Prepare(c.Comm)
