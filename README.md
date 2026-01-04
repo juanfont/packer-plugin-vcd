@@ -178,6 +178,58 @@ build {
 
 Boot command supports standard Packer syntax: `<enter>`, `<esc>`, `<tab>`, `<f1>`-`<f12>`, `<wait>`, `<waitXs>`, etc.
 
+### Communicator (SSH/WinRM)
+
+The plugin supports both SSH (Linux) and WinRM (Windows) communicators via the Packer SDK.
+
+**SSH (default):**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ssh_username` | Yes | SSH username |
+| `ssh_password` | No | SSH password |
+| `ssh_private_key_file` | No | Path to SSH private key |
+| `ssh_timeout` | No | SSH connection timeout (default: 5m) |
+
+**WinRM (for Windows):**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `communicator` | Yes | Set to `"winrm"` for Windows |
+| `winrm_username` | Yes | WinRM username (usually "Administrator") |
+| `winrm_password` | Yes | WinRM password |
+| `winrm_timeout` | No | Connection timeout (default: 30m) |
+| `winrm_port` | No | WinRM port (default: 5985, or 5986 for SSL) |
+| `winrm_use_ssl` | No | Use HTTPS (default: false) |
+| `winrm_insecure` | No | Skip certificate validation |
+| `winrm_use_ntlm` | No | Use NTLM auth instead of basic |
+
+**Windows Example:**
+
+```hcl
+source "vcd-iso" "windows" {
+  # ... VCD and VM configuration ...
+
+  communicator   = "winrm"
+  winrm_username = "Administrator"
+  winrm_password = "YourPassword"
+  winrm_timeout  = "1h"
+}
+```
+
+**Note:** For Windows, your `autounattend.xml` must enable WinRM:
+```xml
+<SynchronousCommand>
+  <CommandLine>winrm quickconfig -q</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service @{AllowUnencrypted="true"}</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service/auth @{Basic="true"}</CommandLine>
+</SynchronousCommand>
+```
+
 ## Development
 
 ```bash
