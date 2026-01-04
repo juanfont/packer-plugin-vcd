@@ -1,0 +1,153 @@
+package common
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/hashicorp/packer-plugin-sdk/bootcommand"
+	"github.com/hashicorp/packer-plugin-sdk/multistep"
+	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
+	"github.com/hashicorp/packer-plugin-sdk/template/interpolate"
+	"github.com/juanfont/packer-plugin-vcd/builder/vcd/driver"
+	"github.com/vmware/go-vcloud-director/v3/govcd"
+)
+
+//go:generate packer-sdc struct-markdown
+//go:generate packer-sdc mapstructure-to-hcl2 -type BootCommandConfig
+
+// BootCommandConfig contains configuration for sending boot commands to the VM.
+type BootCommandConfig struct {
+	bootcommand.BootConfig `mapstructure:",squash"`
+
+	// Time in ms to wait between each key press. Defaults to 100ms.
+	BootKeyInterval time.Duration `mapstructure:"boot_key_interval"`
+}
+
+func (c *BootCommandConfig) Prepare(ctx *interpolate.Context) []error {
+	return c.BootConfig.Prepare(ctx)
+}
+
+// StepBootCommand runs the boot command via WMKS console
+type StepBootCommand struct {
+	Config *BootCommandConfig
+	VMName string
+	Ctx    interpolate.Context
+}
+
+type bootCommandTemplateData struct {
+	HTTPIP   string
+	HTTPPort int
+	Name     string
+}
+
+func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
+	ui := state.Get("ui").(packersdk.Ui)
+	d := state.Get("driver").(driver.Driver)
+	vm := state.Get("vm").(driver.VirtualMachine)
+
+	if len(s.Config.BootCommand) == 0 {
+		ui.Say("No boot command configured, skipping...")
+		return multistep.ActionContinue
+	}
+
+	// Wait for boot
+	if s.Config.BootWait > 0 {
+		ui.Sayf("Waiting %s for VM to boot...", s.Config.BootWait)
+		select {
+		case <-time.After(s.Config.BootWait):
+		case <-ctx.Done():
+			return multistep.ActionHalt
+		}
+	}
+
+	ui.Say("Connecting to VM console via WMKS...")
+
+	// Get the underlying govcd VM to acquire MKS ticket
+	govcdVM := vm.GetVM()
+	client := d.GetClient()
+
+	// Acquire MKS ticket
+	ticket, err := driver.AcquireMksTicket(client, govcdVM)
+	if err != nil {
+		// Try direct method if link traversal fails
+		ticket, err = driver.AcquireMksTicketDirect(client, govcdVM.VM.HREF)
+		if err != nil {
+			state.Put("error", fmt.Errorf("failed to acquire MKS ticket: %w", err))
+			return multistep.ActionHalt
+		}
+	}
+
+	ui.Sayf("MKS ticket acquired (host: %s, port: %d)", ticket.Host, ticket.Port)
+
+	// Connect to console
+	insecure := true // TODO: get from config
+	wmksClient := driver.NewWMKSClient(ticket, driver.WithInsecure(insecure))
+	err = wmksClient.Connect()
+	if err != nil {
+		state.Put("error", fmt.Errorf("failed to connect to WMKS console: %w", err))
+		return multistep.ActionHalt
+	}
+	defer wmksClient.Close()
+
+	ui.Say("Connected to VM console")
+
+	// Prepare template data for boot command interpolation
+	httpIP := ""
+	httpPort := 0
+	if ip, ok := state.GetOk("http_ip"); ok {
+		httpIP = ip.(string)
+	}
+	if port, ok := state.GetOk("http_port"); ok {
+		httpPort = port.(int)
+	}
+
+	s.Ctx.Data = &bootCommandTemplateData{
+		HTTPIP:   httpIP,
+		HTTPPort: httpPort,
+		Name:     s.VMName,
+	}
+
+	// Create boot command driver
+	keyInterval := s.Config.BootKeyInterval
+	if keyInterval == 0 {
+		keyInterval = 100 * time.Millisecond
+	}
+	bootDriver := driver.NewWMKSBootDriver(wmksClient, keyInterval)
+
+	// Parse and execute boot command
+	ui.Say("Sending boot command...")
+	flatBootCommand := s.Config.FlatBootCommand()
+	log.Printf("Boot command: %s", flatBootCommand)
+
+	seq, err := bootcommand.GenerateExpressionSequence(flatBootCommand)
+	if err != nil {
+		state.Put("error", fmt.Errorf("error parsing boot command: %w", err))
+		return multistep.ActionHalt
+	}
+
+	// Execute boot command with group interval
+	groupInterval := s.Config.BootGroupInterval
+	if groupInterval == 0 {
+		groupInterval = 0 // No delay between groups by default
+	}
+
+	if err := seq.Do(ctx, bootDriver); err != nil {
+		state.Put("error", fmt.Errorf("error running boot command: %w", err))
+		return multistep.ActionHalt
+	}
+
+	ui.Say("Boot command completed successfully")
+
+	return multistep.ActionContinue
+}
+
+func (s *StepBootCommand) Cleanup(state multistep.StateBag) {
+	// Nothing to clean up
+}
+
+// BootCommandFromVM provides context for acquiring console access
+type BootCommandFromVM interface {
+	GetVM() *govcd.VM
+}

@@ -3,6 +3,7 @@ module github.com/juanfont/packer-plugin-vcd
 go 1.24.0
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/hcl/v2 v2.19.1
 	github.com/hashicorp/packer-plugin-sdk v0.6.4
 	github.com/pkg/errors v0.9.1
@@ -120,6 +121,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
+	golang.org/x/mobile v0.0.0-20210901025245-1fde1d6c3ca1 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect

@@ -64,6 +64,10 @@ type FlatConfig struct {
 	ISOUrls                   []string                          `mapstructure:"iso_urls" cty:"iso_urls" hcl:"iso_urls"`
 	TargetPath                *string                           `mapstructure:"iso_target_path" cty:"iso_target_path" hcl:"iso_target_path"`
 	TargetExtension           *string                           `mapstructure:"iso_target_extension" cty:"iso_target_extension" hcl:"iso_target_extension"`
+	BootGroupInterval         *string                           `mapstructure:"boot_keygroup_interval" cty:"boot_keygroup_interval" hcl:"boot_keygroup_interval"`
+	BootWait                  *string                           `mapstructure:"boot_wait" cty:"boot_wait" hcl:"boot_wait"`
+	BootCommand               []string                          `mapstructure:"boot_command" cty:"boot_command" hcl:"boot_command"`
+	BootKeyInterval           *string                           `mapstructure:"boot_key_interval" cty:"boot_key_interval" hcl:"boot_key_interval"`
 	RemoveNetworkAdapter      *bool                             `mapstructure:"remove_network_adapter" cty:"remove_network_adapter" hcl:"remove_network_adapter"`
 	BootOrder                 *string                           `mapstructure:"boot_order" cty:"boot_order" hcl:"boot_order"`
 	Type                      *string                           `mapstructure:"communicator" cty:"communicator" hcl:"communicator"`
@@ -187,6 +191,10 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"iso_urls":                     &hcldec.AttrSpec{Name: "iso_urls", Type: cty.List(cty.String), Required: false},
 		"iso_target_path":              &hcldec.AttrSpec{Name: "iso_target_path", Type: cty.String, Required: false},
 		"iso_target_extension":         &hcldec.AttrSpec{Name: "iso_target_extension", Type: cty.String, Required: false},
+		"boot_keygroup_interval":       &hcldec.AttrSpec{Name: "boot_keygroup_interval", Type: cty.String, Required: false},
+		"boot_wait":                    &hcldec.AttrSpec{Name: "boot_wait", Type: cty.String, Required: false},
+		"boot_command":                 &hcldec.AttrSpec{Name: "boot_command", Type: cty.List(cty.String), Required: false},
+		"boot_key_interval":            &hcldec.AttrSpec{Name: "boot_key_interval", Type: cty.String, Required: false},
 		"remove_network_adapter":       &hcldec.AttrSpec{Name: "remove_network_adapter", Type: cty.Bool, Required: false},
 		"boot_order":                   &hcldec.AttrSpec{Name: "boot_order", Type: cty.String, Required: false},
 		"communicator":                 &hcldec.AttrSpec{Name: "communicator", Type: cty.String, Required: false},

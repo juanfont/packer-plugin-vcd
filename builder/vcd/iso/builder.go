@@ -106,17 +106,23 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			Config: &b.config.RunConfig,
 		},
 
-		// TODO: Future steps for Phase 2:
-		// - Boot command via WMKS
-		// - Provisioners
-		// - SSH/WinRM communicator
+		// Step 10: Boot command via WMKS console
+		&common.StepBootCommand{
+			Config: &b.config.BootCommandConfig,
+			VMName: b.config.LocationConfig.VMName,
+			Ctx:    b.config.ctx,
+		},
 
-		// Step 10: Shutdown VM
+		// TODO: Future steps for Phase 3:
+		// - HTTP server for kickstart files
+		// - Provisioners (SSH/WinRM communicator)
+
+		// Step 11: Shutdown VM
 		&common.StepShutdown{
 			Config: &b.config.ShutdownConfig,
 		},
 
-		// Step 11: Export to catalog (optional)
+		// Step 12: Export to catalog (optional)
 		&common.StepExportToCatalog{
 			Config: b.config.ExportToCatalog,
 		},
