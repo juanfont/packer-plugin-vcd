@@ -14,4 +14,6 @@ type CreateConfig struct {
 
 func (c *CreateConfig) Prepare() []error {
 	var errs []error
+
+	return errs
 }
