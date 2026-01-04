@@ -102,6 +102,7 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 	if port, ok := state.GetOk("http_port"); ok {
 		httpPort = port.(int)
 	}
+	log.Printf("Boot command template data: HTTPIP=%s, HTTPPort=%d", httpIP, httpPort)
 
 	s.Ctx.Data = &bootCommandTemplateData{
 		HTTPIP:   httpIP,
@@ -118,7 +119,13 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 
 	// Parse and execute boot command
 	ui.Say("Sending boot command...")
-	flatBootCommand := s.Config.FlatBootCommand()
+
+	// Interpolate the boot command to replace {{ .HTTPIP }}, {{ .HTTPPort }}, etc.
+	flatBootCommand, err := interpolate.Render(s.Config.FlatBootCommand(), &s.Ctx)
+	if err != nil {
+		state.Put("error", fmt.Errorf("error interpolating boot command: %w", err))
+		return multistep.ActionHalt
+	}
 	log.Printf("Boot command: %s", flatBootCommand)
 
 	seq, err := bootcommand.GenerateExpressionSequence(flatBootCommand)

@@ -49,6 +49,7 @@ type FlatConfig struct {
 	CreateVApp                *bool                             `mapstructure:"create_vapp" cty:"create_vapp" hcl:"create_vapp"`
 	Network                   *string                           `mapstructure:"network" cty:"network" hcl:"network"`
 	IPAllocationMode          *string                           `mapstructure:"ip_allocation_mode" cty:"ip_allocation_mode" hcl:"ip_allocation_mode"`
+	VMIPAddress               *string                           `mapstructure:"vm_ip" cty:"vm_ip" hcl:"vm_ip"`
 	StorageProfile            *string                           `mapstructure:"storage_profile" cty:"storage_profile" hcl:"storage_profile"`
 	CPUs                      *int32                            `mapstructure:"CPUs" cty:"CPUs" hcl:"CPUs"`
 	CoresPerSocket            *int32                            `mapstructure:"cores_per_socket" cty:"cores_per_socket" hcl:"cores_per_socket"`
@@ -57,6 +58,7 @@ type FlatConfig struct {
 	MemoryHotAddEnabled       *bool                             `mapstructure:"RAM_hot_plug" cty:"RAM_hot_plug" hcl:"RAM_hot_plug"`
 	NestedHV                  *bool                             `mapstructure:"NestedHV" cty:"NestedHV" hcl:"NestedHV"`
 	Firmware                  *string                           `mapstructure:"firmware" cty:"firmware" hcl:"firmware"`
+	HardwareVersion           *string                           `mapstructure:"hw_version" cty:"hw_version" hcl:"hw_version"`
 	ForceBIOSSetup            *bool                             `mapstructure:"force_bios_setup" cty:"force_bios_setup" hcl:"force_bios_setup"`
 	VTPMEnabled               *bool                             `mapstructure:"vTPM" cty:"vTPM" hcl:"vTPM"`
 	ISOChecksum               *string                           `mapstructure:"iso_checksum" required:"true" cty:"iso_checksum" hcl:"iso_checksum"`
@@ -178,6 +180,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"create_vapp":                  &hcldec.AttrSpec{Name: "create_vapp", Type: cty.Bool, Required: false},
 		"network":                      &hcldec.AttrSpec{Name: "network", Type: cty.String, Required: false},
 		"ip_allocation_mode":           &hcldec.AttrSpec{Name: "ip_allocation_mode", Type: cty.String, Required: false},
+		"vm_ip":                        &hcldec.AttrSpec{Name: "vm_ip", Type: cty.String, Required: false},
 		"storage_profile":              &hcldec.AttrSpec{Name: "storage_profile", Type: cty.String, Required: false},
 		"CPUs":                         &hcldec.AttrSpec{Name: "CPUs", Type: cty.Number, Required: false},
 		"cores_per_socket":             &hcldec.AttrSpec{Name: "cores_per_socket", Type: cty.Number, Required: false},
@@ -186,6 +189,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"RAM_hot_plug":                 &hcldec.AttrSpec{Name: "RAM_hot_plug", Type: cty.Bool, Required: false},
 		"NestedHV":                     &hcldec.AttrSpec{Name: "NestedHV", Type: cty.Bool, Required: false},
 		"firmware":                     &hcldec.AttrSpec{Name: "firmware", Type: cty.String, Required: false},
+		"hw_version":                   &hcldec.AttrSpec{Name: "hw_version", Type: cty.String, Required: false},
 		"force_bios_setup":             &hcldec.AttrSpec{Name: "force_bios_setup", Type: cty.Bool, Required: false},
 		"vTPM":                         &hcldec.AttrSpec{Name: "vTPM", Type: cty.Bool, Required: false},
 		"iso_checksum":                 &hcldec.AttrSpec{Name: "iso_checksum", Type: cty.String, Required: false},

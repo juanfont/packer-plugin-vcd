@@ -176,6 +176,34 @@ func (d *VCDDriver) CreateVApp(vdc *govcd.Vdc, name, description, networkName st
 		return nil, fmt.Errorf("error creating vApp %s: %w", name, err)
 	}
 
+	// Wait for vApp to be ready (status RESOLVED = 8)
+	// VCD operations are asynchronous, we need to poll until the vApp is ready
+	timeout := time.After(5 * time.Minute)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			_, _ = vapp.Delete()
+			return nil, fmt.Errorf("timeout waiting for vApp %s to be ready", name)
+		case <-ticker.C:
+			err := vapp.Refresh()
+			if err != nil {
+				continue // Retry on refresh errors
+			}
+			// Status 8 = RESOLVED (ready), Status 4 = POWERED_OFF is also acceptable
+			status, err := vapp.GetStatus()
+			if err != nil {
+				continue
+			}
+			if status == "RESOLVED" || status == "POWERED_OFF" {
+				goto vappReady
+			}
+		}
+	}
+vappReady:
+
 	// Add network to vApp if specified
 	if networkName != "" {
 		network, err := vdc.GetOrgVdcNetworkByName(networkName, true)

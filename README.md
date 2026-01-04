@@ -19,8 +19,8 @@ This plugin is under active development. Current implementation status:
 | ISO download and upload to catalog | Done |
 | VM creation with hardware configuration | Done |
 | Boot command via WMKS console | Done |
-| HTTP server for kickstart/preseed files | Planned |
-| SSH/WinRM communicator for provisioning | Planned |
+| HTTP server for kickstart/preseed files | Done |
+| SSH/WinRM communicator for provisioning | Done |
 | VM shutdown and cleanup | Done |
 | Export to catalog | Done |
 
@@ -29,6 +29,33 @@ This plugin is under active development. Current implementation status:
 - [Packer](https://www.packer.io/downloads) >= 1.10.2
 - [Go](https://golang.org/doc/install) >= 1.20 (for building from source)
 - VMware Cloud Director 10.4+ (tested on 10.6)
+
+### Network Requirements
+
+For ISO-based builds with preseed/kickstart, the VM needs network connectivity to fetch the preseed file from the Packer HTTP server during OS installation.
+
+**Option 1: DHCP Network (Recommended)**
+
+Use a VCD network with DHCP enabled. The installer will automatically obtain an IP address and fetch the preseed file.
+
+**Option 2: Static IP Configuration**
+
+If your VCD network uses IP pools without DHCP, you must provide static network configuration via boot command parameters. The installer cannot auto-discover pool-assigned IPs.
+
+Example boot command with static IP:
+```hcl
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress=${var.vm_ip} ",
+  "netcfg/get_netmask=${var.vm_netmask} ",
+  "netcfg/get_gateway=${var.vm_gateway} ",
+  "netcfg/get_nameservers=${var.vm_dns} ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+**Note:** VCD "pool" networks allocate static IPs from a range but do not provide DHCP service. The VM will have an IP assigned in VCD's database, but the guest OS has no way to discover it during installation.
 
 ## Installation
 

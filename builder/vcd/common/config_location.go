@@ -21,6 +21,9 @@ type LocationConfig struct {
 	// Valid values are: POOL, DHCP, MANUAL, NONE.
 	// Defaults to POOL.
 	IPAllocationMode string `mapstructure:"ip_allocation_mode"`
+	// The static IP address for the virtual machine.
+	// Required when ip_allocation_mode is MANUAL.
+	VMIPAddress string `mapstructure:"vm_ip"`
 	// The storage profile to use for the virtual machine.
 	// If not specified, the default storage profile for the VDC will be used.
 	StorageProfile string `mapstructure:"storage_profile"`
@@ -48,6 +51,11 @@ func (c *LocationConfig) Prepare() []error {
 	validModes := map[string]bool{"POOL": true, "DHCP": true, "MANUAL": true, "NONE": true}
 	if !validModes[c.IPAllocationMode] {
 		errs = append(errs, fmt.Errorf("'ip_allocation_mode' must be one of: POOL, DHCP, MANUAL, NONE"))
+	}
+
+	// Validate vm_ip is set when using MANUAL allocation
+	if c.IPAllocationMode == "MANUAL" && c.VMIPAddress == "" {
+		errs = append(errs, fmt.Errorf("'vm_ip' is required when 'ip_allocation_mode' is MANUAL"))
 	}
 
 	return errs

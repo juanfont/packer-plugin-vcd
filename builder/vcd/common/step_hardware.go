@@ -24,6 +24,9 @@ type HardwareConfig struct {
 	//
 	// -> **Note:** Use `efi-secure` for UEFI Secure Boot.
 	Firmware string `mapstructure:"firmware"`
+	// The VM hardware version. Defaults to vmx-21 (ESXi 8.0+).
+	// Examples: vmx-19 (ESXi 7.0 U2+), vmx-20 (ESXi 8.0), vmx-21 (ESXi 8.0 U2+)
+	HardwareVersion string `mapstructure:"hw_version"`
 	// Force entry into the BIOS setup screen during boot. Defaults to `false`.
 	ForceBIOSSetup bool `mapstructure:"force_bios_setup"`
 	// Enable virtual trusted platform module (TPM) device for the virtual
