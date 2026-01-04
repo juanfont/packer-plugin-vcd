@@ -1,90 +1,189 @@
-# Packer Plugin Scaffolding
+# Packer Plugin for VMware Cloud Director (VCD)
 
-This repository is a template for a Packer multi-component plugin. It is intended as a starting point for creating Packer plugins, containing:
-- A builder ([builder/scaffolding](builder/scaffolding))
-- A provisioner ([provisioner/scaffolding](provisioner/scaffolding))
-- A post-processor ([post-processor/scaffolding](post-processor/scaffolding))
-- A data source ([datasource/scaffolding](datasource/scaffolding))
-- Docs ([docs](docs))
-- A working example ([example](example))
+A [Packer](https://www.packer.io/) plugin for building VM images on VMware Cloud Director (VCD). This plugin enables automated VM creation from ISO images with full boot command support for unattended installations.
 
-These folders contain boilerplate code that you will need to edit to create your own Packer multi-component plugin.
-A full guide to creating Packer plugins can be found at [Extending Packer](https://www.packer.io/docs/plugins/creation).
+## Features
 
-In this repository you will also find a pre-defined GitHub Action configuration for the release workflow
-(`.goreleaser.yml` and `.github/workflows/release.yml`). The release workflow configuration makes sure the GitHub
-release artifacts are created with the correct binaries and naming conventions.
+- **ISO-based VM creation**: Upload ISOs to VCD catalogs and create VMs from scratch
+- **Boot command support**: Send keystrokes to VM console via WebMKS protocol for automated OS installation
+- **Catalog management**: Automatic temporary catalog creation with optional ISO caching
+- **Export options**: Export finished VMs to OVF or VCD catalog templates
 
-Please see the [GitHub template repository documentation](https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template)
-for how to create a new repository from this template on GitHub.
+## Status
 
-## Packer plugin projects
+This plugin is under active development. Current implementation status:
 
-Here's a non exaustive list of Packer plugins that you can checkout:
+| Feature | Status |
+|---------|--------|
+| VCD connection (username/password, token) | Done |
+| ISO download and upload to catalog | Done |
+| VM creation with hardware configuration | Done |
+| Boot command via WMKS console | Done |
+| HTTP server for kickstart/preseed files | Planned |
+| SSH/WinRM communicator for provisioning | Planned |
+| VM shutdown and cleanup | Done |
+| Export to catalog | Done |
 
-* [github.com/hashicorp/packer-plugin-docker](https://github.com/hashicorp/packer-plugin-docker)
-* [github.com/exoscale/packer-plugin-exoscale](https://github.com/exoscale/packer-plugin-exoscale)
-* [github.com/sylviamoss/packer-plugin-comment](https://github.com/sylviamoss/packer-plugin-comment)
-* [github.com/hashicorp/packer-plugin-hashicups](https://github.com/hashicorp/packer-plugin-hashicups)
+## Requirements
 
-Looking at their code will give you good examples.
+- [Packer](https://www.packer.io/downloads) >= 1.10.2
+- [Go](https://golang.org/doc/install) >= 1.20 (for building from source)
+- VMware Cloud Director 10.4+ (tested on 10.6)
 
-## Build from source
+## Installation
 
-1. Clone this GitHub repository locally.
+### From Source
 
-2. Run this command from the root directory: 
-```shell 
-go build -ldflags="-X github.com/hashicorp/packer-plugin-scaffolding/version.VersionPrerelease=dev" -o packer-plugin-scaffolding
+```bash
+git clone https://github.com/juanfont/packer-plugin-vcd.git
+cd packer-plugin-vcd
+make dev
 ```
 
-3. After you successfully compile, the `packer-plugin-scaffolding` plugin binary file is in the root directory. 
+### Binary Release
 
-4. To install the compiled plugin, run the following command 
-```shell
-packer plugins install --path packer-plugin-scaffolding github.com/hashicorp/scaffolding
+Coming soon.
+
+## Usage
+
+### Basic Example
+
+```hcl
+packer {
+  required_plugins {
+    vcd = {
+      source  = "github.com/juanfont/vcd"
+      version = ">= 0.1.0"
+    }
+  }
+}
+
+source "vcd-iso" "debian" {
+  # VCD Connection
+  vcd_url      = "https://vcd.example.com/api"
+  username     = "admin"
+  password     = "secret"
+  org          = "my-org"
+  vdc          = "my-vdc"
+  insecure     = true
+
+  # ISO Configuration
+  iso_url      = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso"
+  iso_checksum = "sha256:..."
+
+  # Catalog Configuration
+  iso_catalog  = "my-iso-catalog"
+  cache_iso    = true
+
+  # VM Configuration
+  vm_name         = "debian-template"
+  guest_os_type   = "debian10_64Guest"
+  cpus            = 2
+  memory          = 2048
+  disk_size_mb    = 20480
+  network         = "my-network"
+
+  # Boot Command
+  boot_wait = "5s"
+  boot_command = [
+    "<esc><wait>",
+    "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+  ]
+
+  # Export
+  export_to_catalog {
+    catalog     = "templates"
+    name        = "debian-12-template"
+    description = "Debian 12 base template"
+  }
+}
+
+build {
+  sources = ["source.vcd-iso.debian"]
+}
 ```
 
-### Build on *nix systems
-Unix like systems with the make, sed, and grep commands installed can use the `make dev` to execute the build from source steps. 
+## Configuration Reference
 
-### Build on Windows Powershell
-The preferred solution for building on Windows are steps 2-4 listed above.
-If you would prefer to script the building process you can use the following as a guide
+### VCD Connection
 
-```powershell
-$MODULE_NAME = (Get-Content go.mod | Where-Object { $_ -match "^module"  }) -replace 'module ',''
-$FQN = $MODULE_NAME -replace 'packer-plugin-',''
-go build -ldflags="-X $MODULE_NAME/version.VersionPrerelease=dev" -o packer-plugin-scaffolding.exe
-packer plugins install --path packer-plugin-scaffolding.exe $FQN
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `vcd_url` | Yes | VCD API URL |
+| `username` | Yes* | VCD username |
+| `password` | Yes* | VCD password |
+| `token` | Yes* | VCD API token (alternative to username/password) |
+| `org` | Yes | VCD organization |
+| `vdc` | Yes | Virtual datacenter name |
+| `insecure` | No | Skip TLS verification (default: false) |
+
+*Either username/password or token is required.
+
+### ISO Configuration
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `iso_url` | Yes | URL to download the ISO |
+| `iso_checksum` | Yes | ISO checksum (e.g., `sha256:...`) |
+| `iso_catalog` | No | Catalog for ISO storage (created if not exists) |
+| `cache_iso` | No | Keep ISO in catalog after build (default: false) |
+
+### VM Configuration
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `vm_name` | Yes | Name of the VM to create |
+| `guest_os_type` | Yes | VCD guest OS type identifier |
+| `cpus` | No | Number of CPUs (default: 1) |
+| `memory` | No | Memory in MB (default: 1024) |
+| `disk_size_mb` | No | Primary disk size in MB (default: 10240) |
+| `network` | No | Network to attach |
+| `storage_profile` | No | Storage profile name |
+| `firmware` | No | Firmware type: `bios` or `efi` (default: bios) |
+
+### Boot Command
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `boot_command` | No | List of boot commands to type |
+| `boot_wait` | No | Time to wait before typing boot command |
+| `boot_key_interval` | No | Time between keystrokes (default: 100ms) |
+
+Boot command supports standard Packer syntax: `<enter>`, `<esc>`, `<tab>`, `<f1>`-`<f12>`, `<wait>`, `<waitXs>`, etc.
+
+## Development
+
+```bash
+# Build
+make build
+
+# Run tests
+make test
+
+# Regenerate HCL2 specs after config changes
+make generate
+
+# Install for local testing
+make dev
 ```
 
-## Running Acceptance Tests
+### Testing Console Connection
 
-Make sure to install the plugin locally using the steps in [Build from source](#build-from-source).
+The `vcdtest` tool can be used to test WMKS console connectivity:
 
-Once everything needed is set up, run:
+```bash
+go run ./cmd/vcdtest console-test "https://vcd.example.com/api/vApp/vm-xxx" --text "hello" --enter
 ```
-PACKER_ACC=1 go test -count 1 -v ./... -timeout=120m
-```
 
-This will run the acceptance tests for all plugins in this set.
+## Related Projects
 
-## Registering Plugin as Packer Integration
+- [docker-machine-driver-vcd](https://github.com/juanfont/docker-machine-driver-vcd) - Docker Machine driver for VCD
+- [fleeting-plugin-vcd](https://github.com/juanfont/fleeting-plugin-vcd) - GitLab fleeting plugin for VCD
 
-Partner and community plugins can be hard to find if a user doesn't know what 
-they are looking for. To assist with plugin discovery Packer offers an integration
-portal at https://developer.hashicorp.com/packer/integrations to list known integrations 
-that work with the latest release of Packer. 
+## Disclaimer
 
-Registering a plugin as an integration requires [metadata configuration](./metadata.hcl) within the plugin
-repository and approval by the Packer team. To initiate the process of registering your 
-plugin as a Packer integration refer to the [Developing Plugins](https://developer.hashicorp.com/packer/docs/plugins/creation#registering-plugins) page.
+This project was developed using [Claude Code](https://claude.ai/code) (Anthropic's AI coding assistant). While the author has extensive experience with the VCD API from previous projects ([docker-machine-driver-vcd](https://github.com/juanfont/docker-machine-driver-vcd), [fleeting-plugin-vcd](https://github.com/juanfont/fleeting-plugin-vcd), and internal projects), this is the first project built primarily with Claude Code assistance. The initial scaffolding was generated from HashiCorp's packer-plugin-scaffolding template.
 
-# Requirements
+## License
 
--	[packer-plugin-sdk](https://github.com/hashicorp/packer-plugin-sdk) >= v0.5.2
--	[Go](https://golang.org/doc/install) >= 1.20
-
-## Packer Compatibility
-This scaffolding template is compatible with Packer >= v1.10.2
+BSD-3-Clause
