@@ -230,6 +230,29 @@ source "vcd-iso" "windows" {
 </SynchronousCommand>
 ```
 
+### Export to Catalog
+
+Export the built VM as a vApp template to a VCD catalog.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `catalog` | Yes | Target catalog name |
+| `template_name` | No | Template name (defaults to VM name) |
+| `description` | No | Template description |
+| `overwrite` | No | Overwrite existing template (default: false) |
+| `create_catalog` | No | Create catalog if it doesn't exist (default: false) |
+
+**Example:**
+```hcl
+export_to_catalog {
+  catalog        = "my-templates"
+  template_name  = "debian-12-base"
+  description    = "Debian 12 base template"
+  create_catalog = true
+  overwrite      = true
+}
+```
+
 ## Development
 
 ```bash
