@@ -45,6 +45,13 @@ var fullTestCmd = &cobra.Command{
 	Run:   runFullTest,
 }
 
+var consoleTestCmd = &cobra.Command{
+	Use:   "console-test [vm-href]",
+	Short: "Test WMKS console connection and send keystrokes",
+	Args:  cobra.ExactArgs(1),
+	Run:   runConsoleTest,
+}
+
 func init() {
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()
@@ -58,6 +65,11 @@ func init() {
 	rootCmd.AddCommand(listNetworksCmd)
 	rootCmd.AddCommand(createVMCmd)
 	rootCmd.AddCommand(fullTestCmd)
+	rootCmd.AddCommand(consoleTestCmd)
+
+	// Flags for console-test
+	consoleTestCmd.Flags().String("text", "hello", "Text to type via console")
+	consoleTestCmd.Flags().Bool("enter", false, "Press Enter after text")
 
 	// Flags for create-vm
 	createVMCmd.Flags().String("catalog", "packer-iso-test-1767538918", "Catalog containing the ISO")
@@ -701,4 +713,66 @@ func runFullTest(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println("\nFull test complete!")
+}
+
+func runConsoleTest(cmd *cobra.Command, args []string) {
+	vmHref := args[0]
+	text, _ := cmd.Flags().GetString("text")
+	pressEnter, _ := cmd.Flags().GetBool("enter")
+
+	d, err := getDriver()
+	if err != nil {
+		fmt.Printf("Connection failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Connection successful!")
+
+	client := d.GetClient()
+
+	// Get MKS ticket
+	fmt.Printf("\nAcquiring MKS ticket for VM: %s\n", vmHref)
+	ticket, err := driver.AcquireMksTicketDirect(client, vmHref)
+	if err != nil {
+		fmt.Printf("Error acquiring MKS ticket: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("MKS Ticket acquired:\n")
+	fmt.Printf("  Host: %s\n", ticket.Host)
+	fmt.Printf("  Port: %d\n", ticket.Port)
+	fmt.Printf("  Ticket: %s...\n", ticket.Ticket[:min(20, len(ticket.Ticket))])
+	fmt.Printf("  WebSocket URL: %s\n", ticket.WebSocketURL())
+
+	// Connect to console
+	fmt.Println("\nConnecting to VM console...")
+	wmks := driver.NewWMKSClient(ticket, driver.WithInsecure(true))
+	err = wmks.Connect()
+	if err != nil {
+		fmt.Printf("Error connecting to console: %v\n", err)
+		os.Exit(1)
+	}
+	defer wmks.Close()
+	fmt.Println("Connected to VM console!")
+
+	// Wait a moment for connection to stabilize
+	time.Sleep(200 * time.Millisecond)
+
+	// Send text
+	fmt.Printf("\nSending text: %q\n", text)
+	err = wmks.SendString(text)
+	if err != nil {
+		fmt.Printf("Error sending text: %v\n", err)
+		os.Exit(1)
+	}
+
+	if pressEnter {
+		fmt.Println("Pressing Enter...")
+		err = wmks.SendSpecialKey("ENTER")
+		if err != nil {
+			fmt.Printf("Error pressing Enter: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println("\nConsole test complete!")
 }
