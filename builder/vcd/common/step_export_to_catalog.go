@@ -18,7 +18,6 @@ import (
 // This is separate from the ISO catalog (CatalogConfig) which is used for ISO storage during build.
 type ExportToCatalogConfig struct {
 	// The name of the catalog to export the vApp template to.
-	// This catalog must already exist in the organization.
 	Catalog string `mapstructure:"catalog"`
 
 	// The name for the vApp template in the catalog.
@@ -31,6 +30,10 @@ type ExportToCatalogConfig struct {
 	// If true, overwrite an existing template with the same name.
 	// Defaults to false.
 	Overwrite bool `mapstructure:"overwrite"`
+
+	// If true, create the catalog if it doesn't exist.
+	// Defaults to false.
+	CreateCatalog bool `mapstructure:"create_catalog"`
 }
 
 func (c *ExportToCatalogConfig) Prepare(lc *LocationConfig) []error {
@@ -69,11 +72,30 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 
 	ui.Sayf("Exporting vApp as template to catalog: %s", s.Config.Catalog)
 
-	// Get the catalog
+	// Get or create the catalog
 	catalog, err := d.GetCatalog(s.Config.Catalog)
 	if err != nil {
-		state.Put("error", fmt.Errorf("error getting catalog %s: %w", s.Config.Catalog, err))
-		return multistep.ActionHalt
+		if !s.Config.CreateCatalog {
+			state.Put("error", fmt.Errorf("error getting catalog %s: %w", s.Config.Catalog, err))
+			return multistep.ActionHalt
+		}
+
+		// Create the catalog
+		ui.Sayf("Catalog '%s' not found, creating...", s.Config.Catalog)
+		adminCatalog, err := d.CreateCatalog(s.Config.Catalog, "Created by Packer")
+		if err != nil {
+			state.Put("error", fmt.Errorf("error creating catalog %s: %w", s.Config.Catalog, err))
+			return multistep.ActionHalt
+		}
+
+		// Get the regular catalog reference
+		catalog, err = d.GetCatalog(s.Config.Catalog)
+		if err != nil {
+			state.Put("error", fmt.Errorf("error getting newly created catalog %s: %w", s.Config.Catalog, err))
+			return multistep.ActionHalt
+		}
+		_ = adminCatalog // used only for creation
+		ui.Sayf("Catalog '%s' created successfully", s.Config.Catalog)
 	}
 
 	// Check if template already exists
