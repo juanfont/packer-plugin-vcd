@@ -21,6 +21,10 @@ type VirtualMachine interface {
 	IsPoweredOff() (bool, error)
 	WaitForPowerOff(ctx context.Context, timeout time.Duration) error
 
+	// Network
+	GetIPAddress() (string, error)
+	WaitForIP(ctx context.Context, timeout time.Duration) (string, error)
+
 	// Media operations
 	InsertMedia(catalogName, mediaName string) error
 	EjectMedia(catalogName, mediaName string) error
@@ -108,6 +112,70 @@ func (v *VirtualMachineDriver) WaitForPowerOff(ctx context.Context, timeout time
 			}
 			if off {
 				return nil
+			}
+		}
+	}
+}
+
+// --- Network Operations ---
+
+// GetIPAddress returns the IP address of the primary NIC
+func (v *VirtualMachineDriver) GetIPAddress() (string, error) {
+	// Refresh VM to get latest network info
+	if err := v.vm.Refresh(); err != nil {
+		return "", fmt.Errorf("error refreshing VM: %w", err)
+	}
+
+	// Get network connection section which contains IP info from guest tools
+	netSection, err := v.vm.GetNetworkConnectionSection()
+	if err != nil {
+		return "", fmt.Errorf("error getting network connection section: %w", err)
+	}
+
+	// Find the primary NIC using PrimaryNetworkConnectionIndex
+	primaryIndex := netSection.PrimaryNetworkConnectionIndex
+
+	for _, conn := range netSection.NetworkConnection {
+		// Only use the primary NIC
+		if conn.NetworkConnectionIndex != primaryIndex {
+			continue
+		}
+
+		// Check for IP address reported by guest tools
+		if conn.IPAddress != "" {
+			return conn.IPAddress, nil
+		}
+		// Also check external IP (for NAT scenarios)
+		if conn.ExternalIPAddress != "" {
+			return conn.ExternalIPAddress, nil
+		}
+	}
+
+	return "", nil // No IP found yet on primary NIC
+}
+
+// WaitForIP polls until the VM has an IP address or timeout
+func (v *VirtualMachineDriver) WaitForIP(ctx context.Context, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return "", fmt.Errorf("timeout waiting for VM IP address")
+			}
+
+			ip, err := v.GetIPAddress()
+			if err != nil {
+				// Log error but continue polling
+				continue
+			}
+			if ip != "" {
+				return ip, nil
 			}
 		}
 	}
