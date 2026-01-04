@@ -1,0 +1,197 @@
+---
+description: |
+  The vcd-iso builder creates virtual machines on VMware Cloud Director from ISO images.
+page_title: VCD ISO - Builders
+nav_title: ISO
+---
+
+# VMware Cloud Director ISO Builder
+
+Type: `vcd-iso`
+
+The `vcd-iso` builder creates a virtual machine on VMware Cloud Director (VCD), uploads an ISO to a
+catalog, installs an operating system using boot commands, provisions software, and exports the
+virtual machine as a vApp template.
+
+This builder is ideal for creating golden images from scratch using ISO installation media.
+
+## Basic Example
+
+```hcl
+source "vcd-iso" "debian" {
+  host                = "https://vcd.example.com/api"
+  username            = "admin"
+  password            = "secret"
+  org                 = "my-org"
+  vdc                 = "my-vdc"
+  insecure_connection = true
+
+  iso_url      = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso"
+  iso_checksum = "sha256:..."
+
+  vm_name       = "debian-template"
+  vapp          = "packer-build"
+  create_vapp   = true
+  guest_os_type = "debian12_64Guest"
+  CPUs          = 2
+  memory        = 2048
+  disk_size_mb  = 20480
+  network       = "my-network"
+
+  http_directory = "http"
+  boot_wait      = "5s"
+  boot_command   = [
+    "<esc><wait>",
+    "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+  ]
+
+  ssh_username = "packer"
+  ssh_password = "packer"
+  ssh_timeout  = "30m"
+
+  shutdown_command = "echo packer | sudo -S shutdown -P now"
+
+  export_to_catalog {
+    catalog        = "templates"
+    template_name  = "debian-12-base"
+    create_catalog = true
+  }
+}
+
+build {
+  sources = ["source.vcd-iso.debian"]
+}
+```
+
+## Configuration Reference
+
+### VCD Connection
+
+@include 'builder/vcd/common/ConnectConfig-not-required.mdx'
+
+### Location
+
+@include 'builder/vcd/common/LocationConfig-not-required.mdx'
+
+### ISO
+
+@include 'packer-plugin-sdk/multistep/commonsteps/ISOConfig-not-required.mdx'
+
+### Catalog
+
+@include 'builder/vcd/common/CatalogConfig-not-required.mdx'
+
+### Hardware
+
+@include 'builder/vcd/common/HardwareConfig-not-required.mdx'
+
+### Boot Command
+
+@include 'builder/vcd/common/BootCommandConfig-not-required.mdx'
+
+### HTTP Directory
+
+@include 'packer-plugin-sdk/multistep/commonsteps/HTTPConfig-not-required.mdx'
+
+### Communicator
+
+#### Common Options
+
+@include 'packer-plugin-sdk/communicator/Config-not-required.mdx'
+
+#### SSH
+
+@include 'packer-plugin-sdk/communicator/SSH-not-required.mdx'
+
+#### WinRM
+
+@include 'packer-plugin-sdk/communicator/WinRM-not-required.mdx'
+
+### Shutdown
+
+@include 'builder/vcd/common/ShutdownConfig-not-required.mdx'
+
+### Export to Catalog
+
+@include 'builder/vcd/common/ExportToCatalogConfig-not-required.mdx'
+
+## Network Considerations
+
+For ISO-based builds with preseed/kickstart, the VM needs network connectivity to fetch the preseed
+file from the Packer HTTP server during OS installation.
+
+### DHCP Networks
+
+If your VCD network has DHCP enabled, the installer will automatically obtain an IP address and can
+fetch the preseed file without additional configuration.
+
+### Static IP Networks
+
+If your VCD network uses IP pools without DHCP, you must:
+
+1. Set `ip_allocation_mode = "MANUAL"` and provide `vm_ip` in the configuration
+2. Pass static network configuration to the installer via boot command
+
+Example for Debian preseed with static IP:
+
+```hcl
+ip_allocation_mode = "MANUAL"
+vm_ip              = "10.0.0.100"
+
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress=10.0.0.100 ",
+  "netcfg/get_netmask=255.255.255.0 ",
+  "netcfg/get_gateway=10.0.0.1 ",
+  "netcfg/get_nameservers=10.0.0.1 ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+## Boot Command
+
+The boot command is sent to the VM console via the WebMKS protocol. It supports standard Packer
+boot command syntax:
+
+- `<enter>`, `<return>` - Enter key
+- `<esc>` - Escape key
+- `<tab>` - Tab key
+- `<f1>` through `<f12>` - Function keys
+- `<wait>`, `<wait5>`, `<wait10>` - Wait for 1, 5, or 10 seconds
+- `<waitXs>`, `<waitXm>` - Wait for X seconds or minutes
+
+Template variables available:
+
+- `{{ .HTTPIP }}` - IP address of the HTTP server
+- `{{ .HTTPPort }}` - Port of the HTTP server
+- `{{ .Name }}` - VM name
+
+## Windows Builds
+
+For Windows builds, use the WinRM communicator:
+
+```hcl
+source "vcd-iso" "windows" {
+  # ... VCD and VM configuration ...
+
+  communicator   = "winrm"
+  winrm_username = "Administrator"
+  winrm_password = "YourPassword"
+  winrm_timeout  = "2h"
+}
+```
+
+Your `autounattend.xml` must enable WinRM:
+
+```xml
+<SynchronousCommand>
+  <CommandLine>winrm quickconfig -q</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service @{AllowUnencrypted="true"}</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service/auth @{Basic="true"}</CommandLine>
+</SynchronousCommand>
+```
