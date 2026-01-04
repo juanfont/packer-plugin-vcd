@@ -98,8 +98,10 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			StorageProfile:   b.config.LocationConfig.StorageProfile,
 			Network:          b.config.LocationConfig.Network,
 			IPAllocationMode: b.config.LocationConfig.IPAllocationMode,
+			VMIPAddress:      b.config.LocationConfig.VMIPAddress,
 			GuestOSType:      b.config.CreateConfig.GuestOSType,
 			Firmware:         b.config.HardwareConfig.Firmware,
+			HardwareVersion:  b.config.HardwareConfig.HardwareVersion,
 			DiskSizeMB:       b.config.CreateConfig.DiskSizeMB,
 		},
 

@@ -74,7 +74,7 @@ func (s *StepResolveVApp) Run(_ context.Context, state multistep.StateBag) multi
 	state.Put("vapp_name", vappName)
 	state.Put("vapp_created", true)
 
-	ui.Sayf("vApp created: %s", vappName)
+	ui.Sayf("vApp created and ready: %s", vappName)
 	return multistep.ActionContinue
 }
 
@@ -99,9 +99,22 @@ func (s *StepResolveVApp) Cleanup(state multistep.StateBag) {
 	}
 
 	vappName, _ := state.GetOk("vapp_name")
-	ui.Sayf("Deleting vApp: %s", vappName)
+	vappObj := vapp.(*govcd.VApp)
 
-	task, err := vapp.(*govcd.VApp).Delete()
+	// Power off vApp before deleting (required by VCD)
+	status, err := vappObj.GetStatus()
+	if err == nil && status != "POWERED_OFF" && status != "RESOLVED" {
+		ui.Sayf("Powering off vApp: %s", vappName)
+		task, err := vappObj.PowerOff()
+		if err != nil {
+			ui.Errorf("Error powering off vApp: %s", err)
+		} else {
+			_ = task.WaitTaskCompletion()
+		}
+	}
+
+	ui.Sayf("Deleting vApp: %s", vappName)
+	task, err := vappObj.Delete()
 	if err != nil {
 		ui.Errorf("Error deleting vApp: %s", err)
 		return

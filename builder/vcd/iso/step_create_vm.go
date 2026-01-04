@@ -17,8 +17,10 @@ type StepCreateVM struct {
 	StorageProfile   string
 	Network          string
 	IPAllocationMode string
+	VMIPAddress      string
 	GuestOSType      string
 	Firmware         string
+	HardwareVersion  string
 	DiskSizeMB       int64
 }
 
@@ -53,6 +55,12 @@ func (s *StepCreateVM) Run(_ context.Context, state multistep.StateBag) multiste
 		firmware = s.Firmware
 	}
 
+	// Determine hardware version (default to vmx-21 for ESXi 8.0+)
+	hwVersion := "vmx-21"
+	if s.HardwareVersion != "" {
+		hwVersion = s.HardwareVersion
+	}
+
 	// Create empty VM parameters
 	emptyVmParams := &types.RecomposeVAppParamsForEmptyVm{
 		XmlnsVcloud: types.XMLNamespaceVCloud,
@@ -83,7 +91,7 @@ func (s *StepCreateVM) Run(_ context.Context, state multistep.StateBag) multiste
 						},
 					},
 				},
-				HardwareVersion: &types.HardwareVersion{Value: "vmx-19"}, // ESXi 7.0 U2+
+				HardwareVersion: &types.HardwareVersion{Value: hwVersion},
 				VmToolsVersion:  "",
 				VirtualCpuType:  "VM64",
 				TimeSyncWithHost: boolPointer(false),
@@ -105,17 +113,23 @@ func (s *StepCreateVM) Run(_ context.Context, state multistep.StateBag) multiste
 			ipAllocationMode = types.IPAllocationModeNone
 		}
 
+		netConn := &types.NetworkConnection{
+			Network:                 s.Network,
+			NetworkConnectionIndex:  0,
+			IsConnected:             true,
+			IPAddressAllocationMode: ipAllocationMode,
+			NetworkAdapterType:      "VMXNET3",
+		}
+
+		// Set static IP for MANUAL allocation mode
+		if s.IPAllocationMode == "MANUAL" && s.VMIPAddress != "" {
+			netConn.IPAddress = s.VMIPAddress
+			ui.Sayf("Using static IP address: %s", s.VMIPAddress)
+		}
+
 		emptyVmParams.CreateItem.NetworkConnectionSection = &types.NetworkConnectionSection{
 			PrimaryNetworkConnectionIndex: 0,
-			NetworkConnection: []*types.NetworkConnection{
-				{
-					Network:                 s.Network,
-					NetworkConnectionIndex:  0,
-					IsConnected:             true,
-					IPAddressAllocationMode: ipAllocationMode,
-					NetworkAdapterType:      "VMXNET3",
-				},
-			},
+			NetworkConnection:             []*types.NetworkConnection{netConn},
 		}
 	}
 
