@@ -126,7 +126,6 @@ This requires `packer-sdc` which is installed via `make install-packer-sdc`.
    - Example templates for common OS installations (Debian, Windows)
 
 2. **Optional Features**
-   - Export to catalog (partially implemented)
    - Multiple network adapters
    - Disk resize support
 
