@@ -101,26 +101,34 @@ This requires `packer-sdc` which is installed via `make install-packer-sdc`.
    - Graceful shutdown with timeout
    - vApp export to catalog
 
-### Remaining Work (Phase 3)
+### Completed (Phase 3)
 
 1. **HTTP Server for Kickstart/Preseed**
-   - Serve files during boot for automated installation
+   - Serves files during boot for automated installation
    - Template variable interpolation ({{ .HTTPIP }}, {{ .HTTPPort }})
+   - Uses Packer SDK's built-in HTTP server
 
 2. **SSH/WinRM Communicator**
-   - Wait for OS installation to complete
-   - Connect via SSH or WinRM
+   - Wait for OS installation to complete (StepWaitForIP)
+   - Connect via SSH or WinRM (via Packer SDK communicator.StepConnect)
    - Run provisioners (shell, ansible, etc.)
+   - WinRM support via SDK's communicator.Config (all options exposed)
 
-3. **Testing & Documentation**
+3. **Static IP Support**
+   - MANUAL IP allocation mode for networks without DHCP
+   - `vm_ip` config option for static IP assignment
+   - Boot command can pass static network config to installer
+
+### Remaining Work
+
+1. **Testing & Documentation**
    - Integration tests with real VCD
-   - Complete documentation
-   - Example templates for common OS installations
+   - Example templates for common OS installations (Debian, Windows)
 
-4. **Polish**
-   - Better error messages
-   - Progress reporting
-   - Cleanup on failure
+2. **Optional Features**
+   - Export to catalog (partially implemented)
+   - Multiple network adapters
+   - Disk resize support
 
 ## Testing Tools
 
