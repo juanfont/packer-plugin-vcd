@@ -2,13 +2,12 @@ package common
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
 	"github.com/juanfont/packer-plugin-vcd/builder/vcd/driver"
 )
-
-type RunConfig struct{}
 
 type RunConfig struct {
 	// The priority of boot devices. Defaults to `disk,cdrom`.
@@ -29,17 +28,30 @@ type StepRun struct {
 
 func (s *StepRun) Run(_ context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packersdk.Ui)
-	vm := state.Get("vm").(*driver.VirtualMachineDriver)
+	vm := state.Get("vm").(driver.VirtualMachine)
 
-	// TODO(juan): Implement this
-	// https://github.com/hashicorp/packer-plugin-vsphere/blob/main/builder/vsphere/common/step_run.go#L18
+	ui.Say("Powering on virtual machine...")
 
+	err := vm.PowerOn()
+	if err != nil {
+		err = fmt.Errorf("error powering on VM: %w", err)
+		state.Put("error", err)
+		ui.Error(err.Error())
+		return multistep.ActionHalt
+	}
+
+	ui.Say("Virtual machine powered on.")
 	return multistep.ActionContinue
 }
 
 func (s *StepRun) Cleanup(state multistep.StateBag) {
 	ui := state.Get("ui").(packersdk.Ui)
-	vm := state.Get("vm").(*driver.VirtualMachineDriver)
+
+	vmRaw, ok := state.GetOk("vm")
+	if !ok {
+		return
+	}
+	vm := vmRaw.(driver.VirtualMachine)
 
 	_, cancelled := state.GetOk(multistep.StateCancelled)
 	_, halted := state.GetOk(multistep.StateHalted)
@@ -51,6 +63,6 @@ func (s *StepRun) Cleanup(state multistep.StateBag) {
 
 	err := vm.PowerOff()
 	if err != nil {
-		ui.Errorf("%s", err)
+		ui.Errorf("Error powering off VM: %s", err)
 	}
 }

@@ -23,6 +23,7 @@ type Config struct {
 	commonsteps.CDConfig      `mapstructure:",squash"`
 
 	common.ConnectConfig  `mapstructure:",squash"`
+	common.CatalogConfig  `mapstructure:",squash"`
 	CreateConfig          `mapstructure:",squash"`
 	common.LocationConfig `mapstructure:",squash"`
 	common.HardwareConfig `mapstructure:",squash"`
@@ -72,6 +73,7 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 	}
 
 	errs = packersdk.MultiErrorAppend(errs, c.ConnectConfig.Prepare()...)
+	errs = packersdk.MultiErrorAppend(errs, c.CatalogConfig.Prepare()...)
 	errs = packersdk.MultiErrorAppend(errs, c.CreateConfig.Prepare()...)
 	errs = packersdk.MultiErrorAppend(errs, c.LocationConfig.Prepare()...)
 	errs = packersdk.MultiErrorAppend(errs, c.HardwareConfig.Prepare()...)
