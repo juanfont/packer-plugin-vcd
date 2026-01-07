@@ -50,6 +50,9 @@ type FlatConfig struct {
 	Network                   *string                           `mapstructure:"network" cty:"network" hcl:"network"`
 	IPAllocationMode          *string                           `mapstructure:"ip_allocation_mode" cty:"ip_allocation_mode" hcl:"ip_allocation_mode"`
 	VMIPAddress               *string                           `mapstructure:"vm_ip" cty:"vm_ip" hcl:"vm_ip"`
+	AutoDiscoverIP            *bool                             `mapstructure:"auto_discover_ip" cty:"auto_discover_ip" hcl:"auto_discover_ip"`
+	VMGateway                 *string                           `mapstructure:"vm_gateway" cty:"vm_gateway" hcl:"vm_gateway"`
+	VMDNS                     *string                           `mapstructure:"vm_dns" cty:"vm_dns" hcl:"vm_dns"`
 	StorageProfile            *string                           `mapstructure:"storage_profile" cty:"storage_profile" hcl:"storage_profile"`
 	CPUs                      *int32                            `mapstructure:"CPUs" cty:"CPUs" hcl:"CPUs"`
 	CoresPerSocket            *int32                            `mapstructure:"cores_per_socket" cty:"cores_per_socket" hcl:"cores_per_socket"`
@@ -181,6 +184,9 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"network":                      &hcldec.AttrSpec{Name: "network", Type: cty.String, Required: false},
 		"ip_allocation_mode":           &hcldec.AttrSpec{Name: "ip_allocation_mode", Type: cty.String, Required: false},
 		"vm_ip":                        &hcldec.AttrSpec{Name: "vm_ip", Type: cty.String, Required: false},
+		"auto_discover_ip":             &hcldec.AttrSpec{Name: "auto_discover_ip", Type: cty.Bool, Required: false},
+		"vm_gateway":                   &hcldec.AttrSpec{Name: "vm_gateway", Type: cty.String, Required: false},
+		"vm_dns":                       &hcldec.AttrSpec{Name: "vm_dns", Type: cty.String, Required: false},
 		"storage_profile":              &hcldec.AttrSpec{Name: "storage_profile", Type: cty.String, Required: false},
 		"CPUs":                         &hcldec.AttrSpec{Name: "CPUs", Type: cty.Number, Required: false},
 		"cores_per_socket":             &hcldec.AttrSpec{Name: "cores_per_socket", Type: cty.Number, Required: false},

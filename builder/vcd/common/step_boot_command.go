@@ -40,6 +40,11 @@ type bootCommandTemplateData struct {
 	HTTPIP   string
 	HTTPPort int
 	Name     string
+	// Network info (populated when auto_discover_ip is enabled)
+	VMIP    string
+	Gateway string
+	Netmask string
+	DNS     string
 }
 
 func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
@@ -102,12 +107,35 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 	if port, ok := state.GetOk("http_port"); ok {
 		httpPort = port.(int)
 	}
-	log.Printf("Boot command template data: HTTPIP=%s, HTTPPort=%d", httpIP, httpPort)
+
+	// Get network info from state (populated by StepDiscoverIP)
+	vmIP := ""
+	gateway := ""
+	netmask := ""
+	dns := ""
+	if ip, ok := state.GetOk("vm_ip"); ok {
+		vmIP = ip.(string)
+	}
+	if gw, ok := state.GetOk("network_gateway"); ok {
+		gateway = gw.(string)
+	}
+	if nm, ok := state.GetOk("network_netmask"); ok {
+		netmask = nm.(string)
+	}
+	if d, ok := state.GetOk("network_dns"); ok {
+		dns = d.(string)
+	}
+
+	log.Printf("Boot command template data: HTTPIP=%s, HTTPPort=%d, VMIP=%s, Gateway=%s", httpIP, httpPort, vmIP, gateway)
 
 	s.Ctx.Data = &bootCommandTemplateData{
 		HTTPIP:   httpIP,
 		HTTPPort: httpPort,
 		Name:     s.VMName,
+		VMIP:     vmIP,
+		Gateway:  gateway,
+		Netmask:  netmask,
+		DNS:      dns,
 	}
 
 	// Create boot command driver
