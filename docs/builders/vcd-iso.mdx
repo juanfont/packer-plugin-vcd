@@ -123,16 +123,51 @@ file from the Packer HTTP server during OS installation.
 ### DHCP Networks
 
 If your VCD network has DHCP enabled, the installer will automatically obtain an IP address and can
-fetch the preseed file without additional configuration.
+fetch the preseed file without additional configuration:
+
+```hcl
+ip_allocation_mode = "DHCP"
+
+boot_command = [
+  "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
 
 ### Static IP Networks
 
-If your VCD network uses IP pools without DHCP, you must:
+If your VCD network uses IP pools without DHCP, you can use automatic IP discovery or specify the
+IP manually.
 
-1. Set `ip_allocation_mode = "MANUAL"` and provide `vm_ip` in the configuration
-2. Pass static network configuration to the installer via boot command
+#### Auto-discover IP (Recommended)
 
-Example for Debian preseed with static IP:
+Enable `auto_discover_ip` to automatically find an available IP from the network's pool:
+
+```hcl
+ip_allocation_mode = "MANUAL"
+auto_discover_ip   = true
+
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress={{ .VMIP }} ",
+  "netcfg/get_netmask={{ .Netmask }} ",
+  "netcfg/get_gateway={{ .Gateway }} ",
+  "netcfg/get_nameservers={{ .DNS }} ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+You can override the discovered gateway and DNS if needed:
+
+```hcl
+auto_discover_ip = true
+vm_gateway       = "10.0.0.1"
+vm_dns           = "8.8.8.8"
+```
+
+#### Manual IP
+
+Alternatively, specify the IP address manually:
 
 ```hcl
 ip_allocation_mode = "MANUAL"
@@ -166,6 +201,10 @@ Template variables available:
 - `{{ .HTTPIP }}` - IP address of the HTTP server
 - `{{ .HTTPPort }}` - Port of the HTTP server
 - `{{ .Name }}` - VM name
+- `{{ .VMIP }}` - VM IP address (when `auto_discover_ip` is enabled or `vm_ip` is set)
+- `{{ .Gateway }}` - Network gateway (when `auto_discover_ip` is enabled)
+- `{{ .Netmask }}` - Network mask (when `auto_discover_ip` is enabled)
+- `{{ .DNS }}` - DNS server (when `auto_discover_ip` is enabled)
 
 ## Windows Builds
 

@@ -17,7 +17,6 @@ type StepCreateVM struct {
 	StorageProfile   string
 	Network          string
 	IPAllocationMode string
-	VMIPAddress      string
 	GuestOSType      string
 	Firmware         string
 	HardwareVersion  string
@@ -121,10 +120,12 @@ func (s *StepCreateVM) Run(_ context.Context, state multistep.StateBag) multiste
 			NetworkAdapterType:      "VMXNET3",
 		}
 
-		// Set static IP for MANUAL allocation mode
-		if s.IPAllocationMode == "MANUAL" && s.VMIPAddress != "" {
-			netConn.IPAddress = s.VMIPAddress
-			ui.Sayf("Using static IP address: %s", s.VMIPAddress)
+		// Set static IP for MANUAL allocation mode (from state, populated by StepDiscoverIP)
+		if s.IPAllocationMode == "MANUAL" {
+			if vmIP, ok := state.GetOk("vm_ip"); ok {
+				netConn.IPAddress = vmIP.(string)
+				ui.Sayf("Using static IP address: %s", vmIP.(string))
+			}
 		}
 
 		emptyVmParams.CreateItem.NetworkConnectionSection = &types.NetworkConnectionSection{

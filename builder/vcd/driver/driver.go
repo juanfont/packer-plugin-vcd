@@ -3,6 +3,7 @@ package driver
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -12,6 +13,15 @@ import (
 )
 
 const vcdAPIVersion = "38.1"
+
+// NetworkInfo contains information about a network's IP configuration
+type NetworkInfo struct {
+	Gateway     string
+	Netmask     string
+	DNS1        string
+	DNS2        string
+	AvailableIP string // First available IP from pool
+}
 
 // Driver defines the interface for VCD operations
 type Driver interface {
@@ -29,6 +39,9 @@ type Driver interface {
 	// vApp operations
 	GetVApp(vdcName, vappName string) (*govcd.VApp, error)
 	CreateVApp(vdc *govcd.Vdc, name, description, networkName string) (*govcd.VApp, error)
+
+	// Network operations
+	FindAvailableIP(vdc *govcd.Vdc, networkName string) (*NetworkInfo, error)
 
 	// Catalog operations
 	GetCatalog(name string) (*govcd.Catalog, error)
@@ -222,6 +235,96 @@ vappReady:
 	}
 
 	return vapp, nil
+}
+
+// --- Network Operations ---
+
+func (d *VCDDriver) FindAvailableIP(vdc *govcd.Vdc, networkName string) (*NetworkInfo, error) {
+	network, err := vdc.GetOrgVdcNetworkByName(networkName, true)
+	if err != nil {
+		return nil, fmt.Errorf("error getting network %s: %w", networkName, err)
+	}
+
+	cfg := network.OrgVDCNetwork.Configuration
+	if cfg == nil || cfg.IPScopes == nil || len(cfg.IPScopes.IPScope) == 0 {
+		return nil, fmt.Errorf("network %s has no IP configuration", networkName)
+	}
+
+	ipScope := cfg.IPScopes.IPScope[0]
+
+	// Build set of allocated IPs
+	allocated := make(map[string]bool)
+	if ipScope.AllocatedIPAddresses != nil {
+		for _, ip := range ipScope.AllocatedIPAddresses.IPAddress {
+			allocated[ip] = true
+		}
+	}
+	// Also exclude gateway
+	allocated[ipScope.Gateway] = true
+
+	// Find first available IP in ranges
+	var availableIP string
+	if ipScope.IPRanges != nil {
+		for _, r := range ipScope.IPRanges.IPRange {
+			ip := findFirstAvailableIP(r.StartAddress, r.EndAddress, allocated)
+			if ip != "" {
+				availableIP = ip
+				break
+			}
+		}
+	}
+
+	if availableIP == "" {
+		return nil, fmt.Errorf("no available IPs in network %s", networkName)
+	}
+
+	return &NetworkInfo{
+		Gateway:     ipScope.Gateway,
+		Netmask:     ipScope.Netmask,
+		DNS1:        ipScope.DNS1,
+		DNS2:        ipScope.DNS2,
+		AvailableIP: availableIP,
+	}, nil
+}
+
+// findFirstAvailableIP finds the first IP in the range that is not in the allocated set
+func findFirstAvailableIP(start, end string, allocated map[string]bool) string {
+	startIP := net.ParseIP(start).To4()
+	endIP := net.ParseIP(end).To4()
+	if startIP == nil || endIP == nil {
+		return ""
+	}
+
+	// Make a copy of startIP to iterate
+	ip := make(net.IP, len(startIP))
+	copy(ip, startIP)
+
+	for {
+		ipStr := ip.String()
+		if !allocated[ipStr] {
+			return ipStr
+		}
+
+		// Check if we've reached the end
+		if ip.Equal(endIP) {
+			break
+		}
+
+		// Increment IP
+		incrementIP(ip)
+	}
+
+	return ""
+}
+
+// incrementIP increments an IP address by 1
+func incrementIP(ip net.IP) {
+	for i := len(ip) - 1; i >= 0; i-- {
+		ip[i]++
+		if ip[i] != 0 {
+			break
+		}
+	}
 }
 
 // --- Catalog Operations ---

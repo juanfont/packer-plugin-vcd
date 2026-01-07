@@ -63,9 +63,11 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 		},
 
 		// Step 3: Discover HTTP IP for preseed/kickstart server
+		// Uses route-based detection to find the local IP that can reach the VCD host
 		&common.StepHTTPIPDiscover{
 			HTTPIP:        b.config.HTTPConfig.HTTPAddress,
 			HTTPInterface: b.config.HTTPConfig.HTTPInterface,
+			TargetHost:    b.config.ConnectConfig.Host,
 		},
 
 		// Step 4: Start HTTP server for preseed/kickstart files
@@ -91,14 +93,22 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			CreateVApp:  b.config.LocationConfig.CreateVApp,
 		},
 
-		// Step 8: Create empty VM
+		// Step 8: Discover IP (if auto_discover_ip is enabled)
+		&common.StepDiscoverIP{
+			NetworkName:     b.config.LocationConfig.Network,
+			AutoDiscover:    b.config.LocationConfig.AutoDiscoverIP,
+			ManualIP:        b.config.LocationConfig.VMIPAddress,
+			OverrideGateway: b.config.LocationConfig.VMGateway,
+			OverrideDNS:     b.config.LocationConfig.VMDNS,
+		},
+
+		// Step 9: Create empty VM
 		&StepCreateVM{
 			VMName:           b.config.LocationConfig.VMName,
 			Description:      b.config.CreateConfig.Description,
 			StorageProfile:   b.config.LocationConfig.StorageProfile,
 			Network:          b.config.LocationConfig.Network,
 			IPAllocationMode: b.config.LocationConfig.IPAllocationMode,
-			VMIPAddress:      b.config.LocationConfig.VMIPAddress,
 			GuestOSType:      b.config.CreateConfig.GuestOSType,
 			Firmware:         b.config.HardwareConfig.Firmware,
 			HardwareVersion:  b.config.HardwareConfig.HardwareVersion,
