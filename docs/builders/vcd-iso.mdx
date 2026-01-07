@@ -17,18 +17,23 @@ This builder is ideal for creating golden images from scratch using ISO installa
 
 ## Basic Example
 
+This example builds a Debian 12 image with automatic IP discovery for static networks:
+
 ```hcl
 source "vcd-iso" "debian" {
-  host                = "https://vcd.example.com/api"
+  # VCD Connection
+  host                = "vcd.example.com"
   username            = "admin"
   password            = "secret"
   org                 = "my-org"
   vdc                 = "my-vdc"
   insecure_connection = true
 
-  iso_url      = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso"
+  # ISO
+  iso_url      = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.9.0-amd64-netinst.iso"
   iso_checksum = "sha256:..."
 
+  # VM Configuration
   vm_name       = "debian-template"
   vapp          = "packer-build"
   create_vapp   = true
@@ -36,21 +41,38 @@ source "vcd-iso" "debian" {
   CPUs          = 2
   memory        = 2048
   disk_size_mb  = 20480
-  network       = "my-network"
 
+  # Network - auto-discover IP from network pool
+  network            = "my-network"
+  ip_allocation_mode = "MANUAL"
+  auto_discover_ip   = true
+
+  # HTTP server for preseed
   http_directory = "http"
-  boot_wait      = "5s"
-  boot_command   = [
+
+  # Boot command with network configuration
+  boot_wait    = "5s"
+  boot_command = [
     "<esc><wait>",
-    "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+    "auto ",
+    "netcfg/disable_autoconfig=true ",
+    "netcfg/get_ipaddress={{ .VMIP }} ",
+    "netcfg/get_netmask={{ .Netmask }} ",
+    "netcfg/get_gateway={{ .Gateway }} ",
+    "netcfg/get_nameservers={{ .DNS }} ",
+    "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+    "<enter>"
   ]
 
+  # SSH
   ssh_username = "packer"
   ssh_password = "packer"
   ssh_timeout  = "30m"
 
+  # Shutdown
   shutdown_command = "echo packer | sudo -S shutdown -P now"
 
+  # Export to catalog
   export_to_catalog {
     catalog        = "templates"
     template_name  = "debian-12-base"
@@ -167,20 +189,23 @@ vm_dns           = "8.8.8.8"
 
 #### Manual IP
 
-Alternatively, specify the IP address manually:
+Alternatively, specify the IP address manually. When `vm_ip` is set, template variables `{{ .VMIP }}`,
+`{{ .Gateway }}`, etc. are not available - use hardcoded values:
 
 ```hcl
 ip_allocation_mode = "MANUAL"
 vm_ip              = "10.0.0.100"
 
 boot_command = [
-  "<esc>auto ",
+  "<esc><wait>",
+  "auto ",
   "netcfg/disable_autoconfig=true ",
   "netcfg/get_ipaddress=10.0.0.100 ",
   "netcfg/get_netmask=255.255.255.0 ",
   "netcfg/get_gateway=10.0.0.1 ",
   "netcfg/get_nameservers=10.0.0.1 ",
-  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+  "<enter>"
 ]
 ```
 
