@@ -59,8 +59,9 @@ source "vcd-iso" "debian-12" {
 
   # Export to catalog
   export_to_catalog {
-    catalog        = "packer-templates"
-    template_name  = "debian-12-base"
+    catalog        = var.export_catalog
+    template_name  = var.template_name
+    description    = var.template_description
     create_catalog = true
   }
 }

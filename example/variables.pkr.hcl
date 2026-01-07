@@ -55,3 +55,22 @@ variable "ssh_password" {
   sensitive   = true
   description = "SSH password for provisioning"
 }
+
+# Export to Catalog
+variable "export_catalog" {
+  type        = string
+  default     = "packer-templates"
+  description = "Catalog name for exported vApp template"
+}
+
+variable "template_name" {
+  type        = string
+  default     = "debian-12-base"
+  description = "Name of the vApp template in the catalog"
+}
+
+variable "template_description" {
+  type        = string
+  default     = "Debian 12 base image with SSH enabled, built by Packer"
+  description = "Description for the vApp template"
+}
