@@ -33,6 +33,37 @@ the repository.
 
 ## Installation
 
+### Using Pre-built Releases
+
+#### Automatic Installation
+
+Packer v1.7.0 and later supports the `packer init` command which enables the automatic installation
+of Packer plugins. For more information, see the [Packer documentation][docs-packer-init].
+
+To install this plugin, copy and paste this code (HCL2) into your Packer configuration and run
+`packer init`.
+
+```hcl
+packer {
+  required_version = ">= 1.7.0"
+  required_plugins {
+    vcd = {
+      version = ">= 0.0.1"
+      source  = "github.com/juanfont/vcd"
+    }
+  }
+}
+```
+
+#### Manual Installation
+
+You can download the plugin from the GitHub [releases][releases-vcd-plugin]. Once you have
+downloaded the latest release archive for your target operating system and architecture, extract the
+release archive to retrieve the plugin binary file for your platform.
+
+To install the downloaded plugin, please follow the Packer documentation on
+[installing a plugin][docs-packer-plugin-install].
+
 ### From Source
 
 If you prefer to build the plugin from sources, clone the GitHub repository locally and run the
@@ -79,8 +110,10 @@ BSD-3-Clause
 
 [vmware-vcd]: https://www.vmware.com/products/cloud-director.html
 [packer-install]: https://developer.hashicorp.com/packer/install
+[docs-packer-init]: https://developer.hashicorp.com/packer/docs/commands/init
 [docs-packer-plugin-install]: https://developer.hashicorp.com/packer/docs/plugins/install-plugins
 [docs-vcd-iso]: https://github.com/juanfont/packer-plugin-vcd/blob/main/docs/builders/vcd-iso.mdx
+[releases-vcd-plugin]: https://github.com/juanfont/packer-plugin-vcd/releases
 [issues]: https://github.com/juanfont/packer-plugin-vcd/issues
 [docker-machine-driver-vcd]: https://github.com/juanfont/docker-machine-driver-vcd
 [fleeting-plugin-vcd]: https://github.com/juanfont/fleeting-plugin-vcd
