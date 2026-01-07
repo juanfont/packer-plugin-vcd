@@ -14,45 +14,24 @@ before:
     # Check plugin compatibility with required version of the Packer SDK
     - make plugin-check
 builds:
-  # A separated build to run the packer-plugins-check only once for a linux_amd64 binary
-  -
-    id: plugin-check
-    mod_timestamp: '{{ .CommitTimestamp }}'
-    flags:
-      - -trimpath #removes all file system paths from the compiled executable
-    ldflags:
-      - '-s -w -X {{ .ModulePath }}/version.Version={{.Version}} -X {{ .ModulePath }}/version.VersionPrerelease= '
-    goos:
-      - linux
-    goarch:
-      - amd64
-    binary: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
   -
     mod_timestamp: '{{ .CommitTimestamp }}'
     flags:
-      - -trimpath #removes all file system paths from the compiled executable
+      - -trimpath
     ldflags:
       - '-s -w -X {{ .ModulePath }}/version.Version={{.Version}} -X {{ .ModulePath }}/version.VersionPrerelease= '
     goos:
-      - netbsd
-      - solaris
-      - openbsd
-      - freebsd
       - windows
       - linux
       - darwin
     goarch:
       - amd64
-      - '386'
-      - arm
       - arm64
     ignore:
-      - goos: openbsd
+      - goos: windows
         goarch: arm64
-      - goos: darwin
-        goarch: '386'
       - goos: linux
-        goarch: amd64
+        goarch: arm64
     binary: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
 archives:
 - format: zip
