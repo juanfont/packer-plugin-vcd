@@ -57,12 +57,12 @@ source "vcd-iso" "debian-12" {
   # Shutdown
   shutdown_command = "echo '${var.ssh_password}' | sudo -S shutdown -P now"
 
-  # Export to catalog (optional)
-  # export_to_catalog {
-  #   catalog        = "templates"
-  #   template_name  = "debian-12-base"
-  #   create_catalog = true
-  # }
+  # Export to catalog
+  export_to_catalog {
+    catalog        = "packer-templates"
+    template_name  = "debian-12-base"
+    create_catalog = true
+  }
 }
 
 build {

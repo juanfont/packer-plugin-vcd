@@ -70,6 +70,21 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		return multistep.ActionHalt
 	}
 
+	// Eject ISO before capturing - VCD cannot capture vApp with mounted media
+	if isoMounted, ok := state.GetOk("iso_mounted"); ok && isoMounted.(bool) {
+		vm := state.Get("vm").(driver.VirtualMachine)
+		catalogName := state.Get("catalog_name").(string)
+		mediaName := state.Get("uploaded_media_name").(string)
+
+		ui.Sayf("Ejecting ISO before export: %s", mediaName)
+		if err := vm.EjectMedia(catalogName, mediaName); err != nil {
+			ui.Errorf("Warning: failed to eject ISO: %s", err)
+			// Continue anyway - the capture might still work
+		} else {
+			state.Put("iso_mounted", false)
+		}
+	}
+
 	ui.Sayf("Exporting vApp as template to catalog: %s", s.Config.Catalog)
 
 	// Get or create the catalog
@@ -121,7 +136,10 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		Description: description,
 		Source: &types.Reference{
 			HREF: vappRef.VApp.HREF,
-			Name: vappRef.VApp.Name,
+		},
+		CustomizationSection: types.CaptureVAppParamsCustomizationSection{
+			Info:                   "CustomizeOnInstantiate Settings",
+			CustomizeOnInstantiate: true,
 		},
 	}
 
