@@ -3,7 +3,6 @@ package common
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/bootcommand"
@@ -126,8 +125,6 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 		dns = d.(string)
 	}
 
-	log.Printf("Boot command template data: HTTPIP=%s, HTTPPort=%d, VMIP=%s, Gateway=%s", httpIP, httpPort, vmIP, gateway)
-
 	s.Ctx.Data = &bootCommandTemplateData{
 		HTTPIP:   httpIP,
 		HTTPPort: httpPort,
@@ -154,8 +151,6 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 		state.Put("error", fmt.Errorf("error interpolating boot command: %w", err))
 		return multistep.ActionHalt
 	}
-	log.Printf("Boot command: %s", flatBootCommand)
-
 	seq, err := bootcommand.GenerateExpressionSequence(flatBootCommand)
 	if err != nil {
 		state.Put("error", fmt.Errorf("error parsing boot command: %w", err))
