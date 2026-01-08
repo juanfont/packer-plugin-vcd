@@ -3,12 +3,20 @@ package common
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
 	"github.com/juanfont/packer-plugin-vcd/builder/vcd/driver"
 	"github.com/vmware/go-vcloud-director/v3/govcd"
 	"github.com/vmware/go-vcloud-director/v3/types/v56"
+)
+
+const (
+	templateStatusTimeout   = 30 * time.Minute
+	templateDeleteTimeout   = 10 * time.Minute
+	templateStatusPollDelay = 30 * time.Second
 )
 
 //go:generate packer-sdc struct-markdown
@@ -113,14 +121,21 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		ui.Sayf("Catalog '%s' created successfully", s.Config.Catalog)
 	}
 
-	// Check if template already exists
-	if !s.Config.Overwrite {
-		existingItem, err := catalog.GetCatalogItemByName(s.Config.TemplateName, false)
-		if err == nil && existingItem != nil {
+	// Check if template already exists and determine capture name
+	captureName := s.Config.TemplateName
+	needsRename := false
+
+	existingItem, err := catalog.GetCatalogItemByName(s.Config.TemplateName, false)
+	if err == nil && existingItem != nil {
+		if !s.Config.Overwrite {
 			state.Put("error", fmt.Errorf("template '%s' already exists in catalog '%s'. Set overwrite=true to replace it",
 				s.Config.TemplateName, s.Config.Catalog))
 			return multistep.ActionHalt
 		}
+		// Use a temporary name - will rename after capture completes
+		captureName = fmt.Sprintf("%s-packer-%d", s.Config.TemplateName, time.Now().UnixNano())
+		needsRename = true
+		ui.Sayf("Template '%s' exists, will capture as '%s' first then replace", s.Config.TemplateName, captureName)
 	}
 
 	// Create vApp template from vApp
@@ -130,9 +145,9 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		description = fmt.Sprintf("Packer-built template from %s", vappRef.VApp.Name)
 	}
 
-	ui.Sayf("Creating vApp template: %s (this may take a few minutes...)", s.Config.TemplateName)
+	ui.Sayf("Creating vApp template: %s (this may take a few minutes...)", captureName)
 	captureParams := &types.CaptureVAppParams{
-		Name:        s.Config.TemplateName,
+		Name:        captureName,
 		Description: description,
 		Source: &types.Reference{
 			HREF: vappRef.VApp.HREF,
@@ -143,13 +158,88 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		},
 	}
 
-	vappTemplate, err := catalog.CaptureVappTemplate(captureParams)
+	_, err = catalog.CaptureVappTemplate(captureParams)
 	if err != nil {
 		state.Put("error", fmt.Errorf("error capturing vApp as template: %w", err))
 		return multistep.ActionHalt
 	}
 
-	ui.Sayf("vApp template '%s' created successfully in catalog '%s'", vappTemplate.VAppTemplate.Name, s.Config.Catalog)
+	ui.Sayf("vApp template '%s' captured successfully", captureName)
+
+	// Wait for template to reach status 8 (resolved and powered off)
+	ui.Say("Waiting for vApp template to be ready (status 8)...")
+	statusTimeout := time.After(templateStatusTimeout)
+	for {
+		template, err := catalog.GetVAppTemplateByName(captureName)
+		if err != nil {
+			ui.Sayf("Warning: error checking template status: %s", err)
+			time.Sleep(templateStatusPollDelay)
+			continue
+		}
+
+		if template.VAppTemplate.Status == 8 {
+			ui.Say("vApp template is ready")
+			break
+		}
+
+		ui.Sayf("Template status: %d (waiting for 8)...", template.VAppTemplate.Status)
+
+		select {
+		case <-statusTimeout:
+			state.Put("error", fmt.Errorf("vApp template did not reach ready state within %v", templateStatusTimeout))
+			return multistep.ActionHalt
+		case <-time.After(templateStatusPollDelay):
+			// Continue polling
+		}
+	}
+
+	// If we used a temp name, delete old and rename
+	if needsRename {
+		ui.Sayf("Deleting old template '%s'...", s.Config.TemplateName)
+		oldItem, err := catalog.GetCatalogItemByName(s.Config.TemplateName, false)
+		if err == nil && oldItem != nil {
+			if err := oldItem.Delete(); err != nil && !strings.Contains(err.Error(), "not found") {
+				state.Put("error", fmt.Errorf("error deleting old template '%s': %w", s.Config.TemplateName, err))
+				return multistep.ActionHalt
+			}
+
+			// Wait for deletion
+			deleteTimeout := time.After(templateDeleteTimeout)
+			for {
+				deletedItem, err := catalog.GetCatalogItemByName(s.Config.TemplateName, false)
+				if err != nil || deletedItem == nil {
+					ui.Say("Old template deleted successfully")
+					break
+				}
+
+				select {
+				case <-deleteTimeout:
+					state.Put("error", fmt.Errorf("old template was not deleted within %v", templateDeleteTimeout))
+					return multistep.ActionHalt
+				case <-time.After(10 * time.Second):
+					// Continue polling
+				}
+			}
+		}
+
+		// Rename new template
+		ui.Sayf("Renaming template '%s' to '%s'...", captureName, s.Config.TemplateName)
+		newTemplate, err := catalog.GetVAppTemplateByName(captureName)
+		if err != nil {
+			state.Put("error", fmt.Errorf("error getting new template for rename: %w", err))
+			return multistep.ActionHalt
+		}
+
+		newTemplate.VAppTemplate.Name = s.Config.TemplateName
+		_, err = newTemplate.Update()
+		if err != nil {
+			state.Put("error", fmt.Errorf("error renaming template to '%s': %w", s.Config.TemplateName, err))
+			return multistep.ActionHalt
+		}
+		ui.Sayf("Template renamed successfully to '%s'", s.Config.TemplateName)
+	}
+
+	ui.Sayf("vApp template '%s' created successfully in catalog '%s'", s.Config.TemplateName, s.Config.Catalog)
 
 	return multistep.ActionContinue
 }

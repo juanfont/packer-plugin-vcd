@@ -63,6 +63,7 @@ source "vcd-iso" "debian-12" {
     template_name  = var.template_name
     description    = var.template_description
     create_catalog = true
+    overwrite      = true
   }
 }
 
