@@ -100,7 +100,8 @@ VCD supports several IP allocation modes. This plugin supports:
 | `MANUAL` | Static IP assignment | Networks without DHCP (IP pools) |
 
 > **Note:** The `POOL` mode in VCD allocates IPs from VCD's internal pool but doesn't configure them
-> inside the guest OS. For automated installations, use `DHCP` or `MANUAL` with `auto_discover_ip`.
+> inside the guest OS unless the VMware Tools are running (which is not the case at the beginning). 
+> For automated installations, use `DHCP` or `MANUAL` with `auto_discover_ip`.
 
 ### DHCP Networks
 
@@ -209,7 +210,7 @@ If you discover a bug or would like to suggest a feature or an enhancement, plea
 
 ## GenAI Disclaimer
 
-I have used Claude Code for this project. I have been working with VMware Cloud Director and govcd ([docker-machine-driver-vcd][docker-machine-driver-vcd], [fleeting-plugin-vcd][fleeting-plugin-vcd]) for years now, but this project was that expected bigger and it had a major showstopper: VCD does not have an API call to "press keys" and send them to the VM, so in order to type the boot command it was necessary to reverse engineering the WebSockets Web Console and "type" them in the console. Claude helped A LOT.
+I have used Claude Code for this project. I have been working with VMware Cloud Director and govcd ([docker-machine-driver-vcd][docker-machine-driver-vcd], [fleeting-plugin-vcd][fleeting-plugin-vcd]) for years now, but this project was way bigger than and it had a major showstopper: VCD does not have an API call to "press keys" and send them to the VM, so in order to type the boot command it was necessary to reverse engineering the WebSockets Web Console and "type" them in the console. Claude helped A LOT.
 
 ## License
 

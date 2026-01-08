@@ -59,9 +59,19 @@ func (s *StepRun) Cleanup(state multistep.StateBag) {
 		return
 	}
 
+	// Check if VM is already powered off
+	powered, err := vm.IsPoweredOn()
+	if err != nil {
+		ui.Errorf("Error checking VM power state: %s", err)
+		return
+	}
+	if !powered {
+		return
+	}
+
 	ui.Say("Powering off virtual machine...")
 
-	err := vm.PowerOff()
+	err = vm.PowerOff()
 	if err != nil {
 		ui.Errorf("Error powering off VM: %s", err)
 	}

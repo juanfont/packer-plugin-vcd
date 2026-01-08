@@ -101,15 +101,37 @@ func (s *StepResolveVApp) Cleanup(state multistep.StateBag) {
 	vappName, _ := state.GetOk("vapp_name")
 	vappObj := vapp.(*govcd.VApp)
 
+	// Refresh vApp to get current state
+	if err := vappObj.Refresh(); err != nil {
+		ui.Errorf("Error refreshing vApp state: %s", err)
+		return
+	}
+
 	// Power off vApp before deleting (required by VCD)
 	status, err := vappObj.GetStatus()
-	if err == nil && status != "POWERED_OFF" && status != "RESOLVED" {
+	if err != nil {
+		ui.Errorf("Error getting vApp status: %s", err)
+	} else if status != "POWERED_OFF" && status != "RESOLVED" {
 		ui.Sayf("Powering off vApp: %s", vappName)
 		task, err := vappObj.PowerOff()
 		if err != nil {
 			ui.Errorf("Error powering off vApp: %s", err)
 		} else {
 			_ = task.WaitTaskCompletion()
+		}
+	}
+
+	// Undeploy vApp before deleting (required if any VMs exist)
+	if err := vappObj.Refresh(); err == nil {
+		status, _ := vappObj.GetStatus()
+		if status != "RESOLVED" {
+			ui.Sayf("Undeploying vApp: %s", vappName)
+			task, err := vappObj.Undeploy()
+			if err != nil {
+				ui.Errorf("Error undeploying vApp: %s", err)
+			} else {
+				_ = task.WaitTaskCompletion()
+			}
 		}
 	}
 
