@@ -23,6 +23,12 @@ type NetworkInfo struct {
 	AvailableIP string // First available IP from pool
 }
 
+// TrustedPlatformModuleEdit is used to enable/disable TPM on a VM
+type TrustedPlatformModuleEdit struct {
+	Xmlns      string `xml:"xmlns,attr"`
+	TpmPresent bool   `xml:"TpmPresent"`
+}
+
 // Driver defines the interface for VCD operations
 type Driver interface {
 	// VM operations
