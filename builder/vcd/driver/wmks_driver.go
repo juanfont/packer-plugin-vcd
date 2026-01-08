@@ -2,7 +2,6 @@ package driver
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -132,8 +131,6 @@ func (d *WMKSBootDriver) SendKey(key rune, action bootcommand.KeyAction) error {
 
 	needsShift := unicode.IsUpper(key) || strings.ContainsRune(shiftedChars, key)
 
-	log.Printf("Sending key '%c' (scancode %d, shift=%v, action=%s)", key, scancode, needsShift, action.String())
-
 	// Handle key down
 	if action&(bootcommand.KeyOn|bootcommand.KeyPress) != 0 {
 		if needsShift {
@@ -168,8 +165,6 @@ func (d *WMKSBootDriver) SendSpecial(special string, action bootcommand.KeyActio
 	if !ok {
 		return fmt.Errorf("unknown special key: %s", special)
 	}
-
-	log.Printf("Sending special key '%s' (scancode %d, action=%s)", special, scancode, action.String())
 
 	// Handle key down
 	if action&(bootcommand.KeyOn|bootcommand.KeyPress) != 0 {
