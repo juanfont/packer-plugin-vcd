@@ -73,6 +73,9 @@ type FlatConfig struct {
 	BootWait                  *string                           `mapstructure:"boot_wait" cty:"boot_wait" hcl:"boot_wait"`
 	BootCommand               []string                          `mapstructure:"boot_command" cty:"boot_command" hcl:"boot_command"`
 	BootKeyInterval           *string                           `mapstructure:"boot_key_interval" cty:"boot_key_interval" hcl:"boot_key_interval"`
+	FloppyFiles               []string                          `mapstructure:"floppy_files" cty:"floppy_files" hcl:"floppy_files"`
+	FloppyContent             map[string]string                 `mapstructure:"floppy_content" cty:"floppy_content" hcl:"floppy_content"`
+	FloppyLabel               *string                           `mapstructure:"floppy_label" cty:"floppy_label" hcl:"floppy_label"`
 	RemoveNetworkAdapter      *bool                             `mapstructure:"remove_network_adapter" cty:"remove_network_adapter" hcl:"remove_network_adapter"`
 	BootOrder                 *string                           `mapstructure:"boot_order" cty:"boot_order" hcl:"boot_order"`
 	WaitTimeout               *string                           `mapstructure:"ip_wait_timeout" cty:"ip_wait_timeout" hcl:"ip_wait_timeout"`
@@ -207,6 +210,9 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"boot_wait":                    &hcldec.AttrSpec{Name: "boot_wait", Type: cty.String, Required: false},
 		"boot_command":                 &hcldec.AttrSpec{Name: "boot_command", Type: cty.List(cty.String), Required: false},
 		"boot_key_interval":            &hcldec.AttrSpec{Name: "boot_key_interval", Type: cty.String, Required: false},
+		"floppy_files":                 &hcldec.AttrSpec{Name: "floppy_files", Type: cty.List(cty.String), Required: false},
+		"floppy_content":               &hcldec.AttrSpec{Name: "floppy_content", Type: cty.Map(cty.String), Required: false},
+		"floppy_label":                 &hcldec.AttrSpec{Name: "floppy_label", Type: cty.String, Required: false},
 		"remove_network_adapter":       &hcldec.AttrSpec{Name: "remove_network_adapter", Type: cty.Bool, Required: false},
 		"boot_order":                   &hcldec.AttrSpec{Name: "boot_order", Type: cty.String, Required: false},
 		"ip_wait_timeout":              &hcldec.AttrSpec{Name: "ip_wait_timeout", Type: cty.String, Required: false},

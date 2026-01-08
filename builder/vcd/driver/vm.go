@@ -3,9 +3,11 @@ package driver
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/vmware/go-vcloud-director/v3/govcd"
+	"github.com/vmware/go-vcloud-director/v3/types/v56"
 )
 
 // VirtualMachine defines the interface for VM operations
@@ -28,10 +30,12 @@ type VirtualMachine interface {
 	// Media operations
 	InsertMedia(catalogName, mediaName string) error
 	EjectMedia(catalogName, mediaName string) error
+	MountFloppy(catalogName, mediaName string) error
 
 	// Hardware configuration
 	ChangeCPU(cpuCount, coresPerSocket int) error
 	ChangeMemory(memoryMB int64) error
+	SetTPM(enabled bool) error
 
 	// Info
 	GetName() string
@@ -209,6 +213,23 @@ func (v *VirtualMachineDriver) EjectMedia(catalogName, mediaName string) error {
 	return nil
 }
 
+// MountFloppy mounts a floppy image to the VM using InsertMedia API.
+// This must be called before the VM is powered on.
+func (v *VirtualMachineDriver) MountFloppy(catalogName, mediaName string) error {
+	org, err := v.driver.GetOrg()
+	if err != nil {
+		return err
+	}
+
+	// Try to use InsertMedia API - VCD might handle floppy media appropriately
+	task, err := v.vm.HandleInsertMedia(org, catalogName, mediaName)
+	if err != nil {
+		return fmt.Errorf("error mounting floppy media %s: %w", mediaName, err)
+	}
+
+	return task.WaitTaskCompletion()
+}
+
 // --- Hardware Configuration ---
 
 func (v *VirtualMachineDriver) ChangeCPU(cpuCount, coresPerSocket int) error {
@@ -225,6 +246,26 @@ func (v *VirtualMachineDriver) ChangeMemory(memoryMB int64) error {
 		return fmt.Errorf("error changing memory: %w", err)
 	}
 	return nil
+}
+
+func (v *VirtualMachineDriver) SetTPM(enabled bool) error {
+	tpmEdit := &TrustedPlatformModuleEdit{
+		Xmlns:      types.XMLNamespaceVCloud,
+		TpmPresent: enabled,
+	}
+
+	task, err := v.driver.client.Client.ExecuteTaskRequest(
+		v.vm.VM.HREF+"/action/editTrustedPlatformModule",
+		http.MethodPost,
+		"application/vnd.vmware.vcloud.TpmSection+xml",
+		"error changing TPM for VM: %s",
+		tpmEdit,
+	)
+	if err != nil {
+		return fmt.Errorf("error setting TPM: %w", err)
+	}
+
+	return task.WaitTaskCompletion()
 }
 
 // --- Info ---
