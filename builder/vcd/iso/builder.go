@@ -73,29 +73,19 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 		// Step 4: Start HTTP server for preseed/kickstart files
 		commonsteps.HTTPServerFromHTTPConfig(&b.config.HTTPConfig),
 
-		// Step 5: Create floppy disk image (if floppy_files or floppy_content configured)
-		&common.StepCreateFloppy{
-			Files:   b.config.FloppyFiles,
-			Content: b.config.FloppyContent,
-			Label:   b.config.FloppyLabel,
-		},
-
-		// Step 6: Create temporary catalog (or use existing)
+		// Step 5: Create temporary catalog (or use existing)
 		&common.StepCreateTempCatalog{
 			Config:  &b.config.CatalogConfig,
 			VDCName: b.config.LocationConfig.VDC,
 		},
 
-		// Step 7: Upload ISO to catalog (with caching support)
+		// Step 6: Upload ISO to catalog (with caching support)
 		&common.StepUploadISO{
 			CacheISO:       b.config.CatalogConfig.CacheISO,
 			CacheOverwrite: b.config.CatalogConfig.CacheOverwrite,
 		},
 
-		// Step 8: Upload floppy to catalog (if floppy was created)
-		&common.StepUploadFloppy{},
-
-		// Step 9: Resolve or create vApp
+		// Step 7: Resolve or create vApp
 		&common.StepResolveVApp{
 			VDCName:     b.config.LocationConfig.VDC,
 			VAppName:    b.config.LocationConfig.VApp,
@@ -103,7 +93,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			CreateVApp:  b.config.LocationConfig.CreateVApp,
 		},
 
-		// Step 10: Discover IP (if auto_discover_ip is enabled)
+		// Step 8: Discover IP (if auto_discover_ip is enabled)
 		&common.StepDiscoverIP{
 			NetworkName:     b.config.LocationConfig.Network,
 			AutoDiscover:    b.config.LocationConfig.AutoDiscoverIP,
@@ -112,7 +102,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			OverrideDNS:     b.config.LocationConfig.VMDNS,
 		},
 
-		// Step 11: Create empty VM
+		// Step 9: Create empty VM
 		&StepCreateVM{
 			VMName:           b.config.LocationConfig.VMName,
 			Description:      b.config.CreateConfig.Description,
@@ -125,55 +115,52 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			DiskSizeMB:       b.config.CreateConfig.DiskSizeMB,
 		},
 
-		// Step 12: Configure hardware (CPU, memory)
+		// Step 10: Configure hardware (CPU, memory)
 		&StepHardware{
 			Config: &b.config.HardwareConfig,
 		},
 
-		// Step 13: Configure TPM (if enabled)
+		// Step 11: Configure TPM (if enabled)
 		&common.StepConfigureTPM{
 			Enabled: b.config.HardwareConfig.VTPMEnabled,
 		},
 
-		// Step 14: Mount ISO to VM
+		// Step 12: Mount ISO to VM
 		&common.StepMountISO{},
 
-		// Step 15: Mount floppy to VM (if floppy was uploaded)
-		&common.StepMountFloppy{},
-
-		// Step 16: Power on VM
+		// Step 13: Power on VM
 		&common.StepRun{
 			Config: &b.config.RunConfig,
 		},
 
-		// Step 17: Boot command via WMKS console
+		// Step 14: Boot command via WMKS console
 		&common.StepBootCommand{
 			Config: &b.config.BootCommandConfig,
 			VMName: b.config.LocationConfig.VMName,
 			Ctx:    b.config.ctx,
 		},
 
-		// Step 18: Wait for VM to get IP address
+		// Step 15: Wait for VM to get IP address
 		&common.StepWaitForIP{
 			Config: &b.config.WaitIpConfig,
 		},
 
-		// Step 19: Connect to VM via SSH/WinRM
+		// Step 16: Connect to VM via SSH/WinRM
 		&communicator.StepConnect{
 			Config:    &b.config.Comm,
 			Host:      common.CommHost(b.config.Comm.Host()),
 			SSHConfig: b.config.Comm.SSHConfigFunc(),
 		},
 
-		// Step 20: Run provisioners
+		// Step 17: Run provisioners
 		&commonsteps.StepProvision{},
 
-		// Step 21: Shutdown VM
+		// Step 18: Shutdown VM
 		&common.StepShutdown{
 			Config: &b.config.ShutdownConfig,
 		},
 
-		// Step 22: Export to catalog (optional)
+		// Step 19: Export to catalog (optional)
 		&common.StepExportToCatalog{
 			Config: b.config.ExportToCatalog,
 		},

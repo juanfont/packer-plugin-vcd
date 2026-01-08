@@ -29,7 +29,6 @@ type Config struct {
 	common.HardwareConfig     `mapstructure:",squash"`
 	commonsteps.ISOConfig     `mapstructure:",squash"`
 	common.BootCommandConfig  `mapstructure:",squash"`
-	common.FloppyConfig       `mapstructure:",squash"`
 	// common.CDRomConfig                `mapstructure:",squash"` // we will probably need this
 	common.RemoveNetworkAdapterConfig `mapstructure:",squash"`
 	common.RunConfig                  `mapstructure:",squash"`

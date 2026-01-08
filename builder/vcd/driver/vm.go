@@ -30,7 +30,6 @@ type VirtualMachine interface {
 	// Media operations
 	InsertMedia(catalogName, mediaName string) error
 	EjectMedia(catalogName, mediaName string) error
-	MountFloppy(catalogName, mediaName string) error
 
 	// Hardware configuration
 	ChangeCPU(cpuCount, coresPerSocket int) error
@@ -211,23 +210,6 @@ func (v *VirtualMachineDriver) EjectMedia(catalogName, mediaName string) error {
 		return fmt.Errorf("error ejecting media %s: %w", mediaName, err)
 	}
 	return nil
-}
-
-// MountFloppy mounts a floppy image to the VM using InsertMedia API.
-// This must be called before the VM is powered on.
-func (v *VirtualMachineDriver) MountFloppy(catalogName, mediaName string) error {
-	org, err := v.driver.GetOrg()
-	if err != nil {
-		return err
-	}
-
-	// Try to use InsertMedia API - VCD might handle floppy media appropriately
-	task, err := v.vm.HandleInsertMedia(org, catalogName, mediaName)
-	if err != nil {
-		return fmt.Errorf("error mounting floppy media %s: %w", mediaName, err)
-	}
-
-	return task.WaitTaskCompletion()
 }
 
 // --- Hardware Configuration ---
