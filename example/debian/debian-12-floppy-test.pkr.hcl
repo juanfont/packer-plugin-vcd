@@ -1,12 +1,3 @@
-packer {
-  required_plugins {
-    vcd = {
-      version = ">= 0.0.1"
-      source  = "github.com/juanfont/vcd"
-    }
-  }
-}
-
 source "vcd-iso" "debian-12-floppy-test" {
   # VCD Connection
   host                = var.vcd_host
