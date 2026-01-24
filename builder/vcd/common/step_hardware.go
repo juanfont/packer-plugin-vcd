@@ -24,11 +24,18 @@ type HardwareConfig struct {
 	//
 	// -> **Note:** Use `efi-secure` for UEFI Secure Boot.
 	Firmware string `mapstructure:"firmware"`
+	// The VM hardware version. Defaults to vmx-21 (ESXi 8.0+).
+	// Examples: vmx-19 (ESXi 7.0 U2+), vmx-20 (ESXi 8.0), vmx-21 (ESXi 8.0 U2+)
+	HardwareVersion string `mapstructure:"hw_version"`
 	// Force entry into the BIOS setup screen during boot. Defaults to `false`.
 	ForceBIOSSetup bool `mapstructure:"force_bios_setup"`
 	// Enable virtual trusted platform module (TPM) device for the virtual
 	// machine. Defaults to `false`.
 	VTPMEnabled bool `mapstructure:"vTPM"`
+	// Boot delay in seconds. This adds a delay between power-on and boot,
+	// giving time for the "Press any key to boot from CD" prompt to appear.
+	// Useful for EFI boot with Windows ISOs. Defaults to 0 (no delay).
+	BootDelay int `mapstructure:"boot_delay"`
 }
 
 func (c *HardwareConfig) Prepare() []error {

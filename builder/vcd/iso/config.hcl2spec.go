@@ -35,9 +35,25 @@ type FlatConfig struct {
 	Password                  *string                           `mapstructure:"password" cty:"password" hcl:"password"`
 	Token                     *string                           `mapstructure:"token" cty:"token" hcl:"token"`
 	InsecureConnection        *bool                             `mapstructure:"insecure_connection" cty:"insecure_connection" hcl:"insecure_connection"`
+	ISOCatalog                *string                           `mapstructure:"iso_catalog" cty:"iso_catalog" hcl:"iso_catalog"`
+	TempCatalogPrefix         *string                           `mapstructure:"temp_catalog_prefix" cty:"temp_catalog_prefix" hcl:"temp_catalog_prefix"`
+	CacheISO                  *bool                             `mapstructure:"cache_iso" cty:"cache_iso" hcl:"cache_iso"`
+	CacheOverwrite            *bool                             `mapstructure:"cache_overwrite" cty:"cache_overwrite" hcl:"cache_overwrite"`
+	Version                   *string                           `mapstructure:"vm_version" cty:"vm_version" hcl:"vm_version"`
+	GuestOSType               *string                           `mapstructure:"guest_os_type" cty:"guest_os_type" hcl:"guest_os_type"`
+	Description               *string                           `mapstructure:"vm_description" cty:"vm_description" hcl:"vm_description"`
+	DiskSizeMB                *int64                            `mapstructure:"disk_size_mb" cty:"disk_size_mb" hcl:"disk_size_mb"`
 	VMName                    *string                           `mapstructure:"vm_name" cty:"vm_name" hcl:"vm_name"`
 	VApp                      *string                           `mapstructure:"vapp" cty:"vapp" hcl:"vapp"`
 	VDC                       *string                           `mapstructure:"vdc" cty:"vdc" hcl:"vdc"`
+	CreateVApp                *bool                             `mapstructure:"create_vapp" cty:"create_vapp" hcl:"create_vapp"`
+	Network                   *string                           `mapstructure:"network" cty:"network" hcl:"network"`
+	IPAllocationMode          *string                           `mapstructure:"ip_allocation_mode" cty:"ip_allocation_mode" hcl:"ip_allocation_mode"`
+	VMIPAddress               *string                           `mapstructure:"vm_ip" cty:"vm_ip" hcl:"vm_ip"`
+	AutoDiscoverIP            *bool                             `mapstructure:"auto_discover_ip" cty:"auto_discover_ip" hcl:"auto_discover_ip"`
+	VMGateway                 *string                           `mapstructure:"vm_gateway" cty:"vm_gateway" hcl:"vm_gateway"`
+	VMDNS                     *string                           `mapstructure:"vm_dns" cty:"vm_dns" hcl:"vm_dns"`
+	StorageProfile            *string                           `mapstructure:"storage_profile" cty:"storage_profile" hcl:"storage_profile"`
 	CPUs                      *int32                            `mapstructure:"CPUs" cty:"CPUs" hcl:"CPUs"`
 	CoresPerSocket            *int32                            `mapstructure:"cores_per_socket" cty:"cores_per_socket" hcl:"cores_per_socket"`
 	CpuHotAddEnabled          *bool                             `mapstructure:"CPU_hot_plug" cty:"CPU_hot_plug" hcl:"CPU_hot_plug"`
@@ -45,14 +61,23 @@ type FlatConfig struct {
 	MemoryHotAddEnabled       *bool                             `mapstructure:"RAM_hot_plug" cty:"RAM_hot_plug" hcl:"RAM_hot_plug"`
 	NestedHV                  *bool                             `mapstructure:"NestedHV" cty:"NestedHV" hcl:"NestedHV"`
 	Firmware                  *string                           `mapstructure:"firmware" cty:"firmware" hcl:"firmware"`
+	HardwareVersion           *string                           `mapstructure:"hw_version" cty:"hw_version" hcl:"hw_version"`
 	ForceBIOSSetup            *bool                             `mapstructure:"force_bios_setup" cty:"force_bios_setup" hcl:"force_bios_setup"`
 	VTPMEnabled               *bool                             `mapstructure:"vTPM" cty:"vTPM" hcl:"vTPM"`
+	BootDelay                 *int                              `mapstructure:"boot_delay" cty:"boot_delay" hcl:"boot_delay"`
 	ISOChecksum               *string                           `mapstructure:"iso_checksum" required:"true" cty:"iso_checksum" hcl:"iso_checksum"`
 	RawSingleISOUrl           *string                           `mapstructure:"iso_url" required:"true" cty:"iso_url" hcl:"iso_url"`
 	ISOUrls                   []string                          `mapstructure:"iso_urls" cty:"iso_urls" hcl:"iso_urls"`
 	TargetPath                *string                           `mapstructure:"iso_target_path" cty:"iso_target_path" hcl:"iso_target_path"`
 	TargetExtension           *string                           `mapstructure:"iso_target_extension" cty:"iso_target_extension" hcl:"iso_target_extension"`
+	BootGroupInterval         *string                           `mapstructure:"boot_keygroup_interval" cty:"boot_keygroup_interval" hcl:"boot_keygroup_interval"`
+	BootWait                  *string                           `mapstructure:"boot_wait" cty:"boot_wait" hcl:"boot_wait"`
+	BootCommand               []string                          `mapstructure:"boot_command" cty:"boot_command" hcl:"boot_command"`
+	BootKeyInterval           *string                           `mapstructure:"boot_key_interval" cty:"boot_key_interval" hcl:"boot_key_interval"`
 	RemoveNetworkAdapter      *bool                             `mapstructure:"remove_network_adapter" cty:"remove_network_adapter" hcl:"remove_network_adapter"`
+	BootOrder                 *string                           `mapstructure:"boot_order" cty:"boot_order" hcl:"boot_order"`
+	WaitTimeout               *string                           `mapstructure:"ip_wait_timeout" cty:"ip_wait_timeout" hcl:"ip_wait_timeout"`
+	SettleTimeout             *string                           `mapstructure:"ip_settle_timeout" cty:"ip_settle_timeout" hcl:"ip_settle_timeout"`
 	Type                      *string                           `mapstructure:"communicator" cty:"communicator" hcl:"communicator"`
 	PauseBeforeConnect        *string                           `mapstructure:"pause_before_connecting" cty:"pause_before_connecting" hcl:"pause_before_connecting"`
 	SSHHost                   *string                           `mapstructure:"ssh_host" cty:"ssh_host" hcl:"ssh_host"`
@@ -145,9 +170,25 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"password":                     &hcldec.AttrSpec{Name: "password", Type: cty.String, Required: false},
 		"token":                        &hcldec.AttrSpec{Name: "token", Type: cty.String, Required: false},
 		"insecure_connection":          &hcldec.AttrSpec{Name: "insecure_connection", Type: cty.Bool, Required: false},
+		"iso_catalog":                  &hcldec.AttrSpec{Name: "iso_catalog", Type: cty.String, Required: false},
+		"temp_catalog_prefix":          &hcldec.AttrSpec{Name: "temp_catalog_prefix", Type: cty.String, Required: false},
+		"cache_iso":                    &hcldec.AttrSpec{Name: "cache_iso", Type: cty.Bool, Required: false},
+		"cache_overwrite":              &hcldec.AttrSpec{Name: "cache_overwrite", Type: cty.Bool, Required: false},
+		"vm_version":                   &hcldec.AttrSpec{Name: "vm_version", Type: cty.String, Required: false},
+		"guest_os_type":                &hcldec.AttrSpec{Name: "guest_os_type", Type: cty.String, Required: false},
+		"vm_description":               &hcldec.AttrSpec{Name: "vm_description", Type: cty.String, Required: false},
+		"disk_size_mb":                 &hcldec.AttrSpec{Name: "disk_size_mb", Type: cty.Number, Required: false},
 		"vm_name":                      &hcldec.AttrSpec{Name: "vm_name", Type: cty.String, Required: false},
 		"vapp":                         &hcldec.AttrSpec{Name: "vapp", Type: cty.String, Required: false},
 		"vdc":                          &hcldec.AttrSpec{Name: "vdc", Type: cty.String, Required: false},
+		"create_vapp":                  &hcldec.AttrSpec{Name: "create_vapp", Type: cty.Bool, Required: false},
+		"network":                      &hcldec.AttrSpec{Name: "network", Type: cty.String, Required: false},
+		"ip_allocation_mode":           &hcldec.AttrSpec{Name: "ip_allocation_mode", Type: cty.String, Required: false},
+		"vm_ip":                        &hcldec.AttrSpec{Name: "vm_ip", Type: cty.String, Required: false},
+		"auto_discover_ip":             &hcldec.AttrSpec{Name: "auto_discover_ip", Type: cty.Bool, Required: false},
+		"vm_gateway":                   &hcldec.AttrSpec{Name: "vm_gateway", Type: cty.String, Required: false},
+		"vm_dns":                       &hcldec.AttrSpec{Name: "vm_dns", Type: cty.String, Required: false},
+		"storage_profile":              &hcldec.AttrSpec{Name: "storage_profile", Type: cty.String, Required: false},
 		"CPUs":                         &hcldec.AttrSpec{Name: "CPUs", Type: cty.Number, Required: false},
 		"cores_per_socket":             &hcldec.AttrSpec{Name: "cores_per_socket", Type: cty.Number, Required: false},
 		"CPU_hot_plug":                 &hcldec.AttrSpec{Name: "CPU_hot_plug", Type: cty.Bool, Required: false},
@@ -155,14 +196,23 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"RAM_hot_plug":                 &hcldec.AttrSpec{Name: "RAM_hot_plug", Type: cty.Bool, Required: false},
 		"NestedHV":                     &hcldec.AttrSpec{Name: "NestedHV", Type: cty.Bool, Required: false},
 		"firmware":                     &hcldec.AttrSpec{Name: "firmware", Type: cty.String, Required: false},
+		"hw_version":                   &hcldec.AttrSpec{Name: "hw_version", Type: cty.String, Required: false},
 		"force_bios_setup":             &hcldec.AttrSpec{Name: "force_bios_setup", Type: cty.Bool, Required: false},
 		"vTPM":                         &hcldec.AttrSpec{Name: "vTPM", Type: cty.Bool, Required: false},
+		"boot_delay":                   &hcldec.AttrSpec{Name: "boot_delay", Type: cty.Number, Required: false},
 		"iso_checksum":                 &hcldec.AttrSpec{Name: "iso_checksum", Type: cty.String, Required: false},
 		"iso_url":                      &hcldec.AttrSpec{Name: "iso_url", Type: cty.String, Required: false},
 		"iso_urls":                     &hcldec.AttrSpec{Name: "iso_urls", Type: cty.List(cty.String), Required: false},
 		"iso_target_path":              &hcldec.AttrSpec{Name: "iso_target_path", Type: cty.String, Required: false},
 		"iso_target_extension":         &hcldec.AttrSpec{Name: "iso_target_extension", Type: cty.String, Required: false},
+		"boot_keygroup_interval":       &hcldec.AttrSpec{Name: "boot_keygroup_interval", Type: cty.String, Required: false},
+		"boot_wait":                    &hcldec.AttrSpec{Name: "boot_wait", Type: cty.String, Required: false},
+		"boot_command":                 &hcldec.AttrSpec{Name: "boot_command", Type: cty.List(cty.String), Required: false},
+		"boot_key_interval":            &hcldec.AttrSpec{Name: "boot_key_interval", Type: cty.String, Required: false},
 		"remove_network_adapter":       &hcldec.AttrSpec{Name: "remove_network_adapter", Type: cty.Bool, Required: false},
+		"boot_order":                   &hcldec.AttrSpec{Name: "boot_order", Type: cty.String, Required: false},
+		"ip_wait_timeout":              &hcldec.AttrSpec{Name: "ip_wait_timeout", Type: cty.String, Required: false},
+		"ip_settle_timeout":            &hcldec.AttrSpec{Name: "ip_settle_timeout", Type: cty.String, Required: false},
 		"communicator":                 &hcldec.AttrSpec{Name: "communicator", Type: cty.String, Required: false},
 		"pause_before_connecting":      &hcldec.AttrSpec{Name: "pause_before_connecting", Type: cty.String, Required: false},
 		"ssh_host":                     &hcldec.AttrSpec{Name: "ssh_host", Type: cty.String, Required: false},

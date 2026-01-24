@@ -1,90 +1,268 @@
-# Packer Plugin Scaffolding
+# Packer Plugin for VMware Cloud Director
 
-This repository is a template for a Packer multi-component plugin. It is intended as a starting point for creating Packer plugins, containing:
-- A builder ([builder/scaffolding](builder/scaffolding))
-- A provisioner ([provisioner/scaffolding](provisioner/scaffolding))
-- A post-processor ([post-processor/scaffolding](post-processor/scaffolding))
-- A data source ([datasource/scaffolding](datasource/scaffolding))
-- Docs ([docs](docs))
-- A working example ([example](example))
+The Packer Plugin for VMware Cloud Director is a plugin that can be used to create virtual machine
+images on [VMware Cloud Director][vmware-vcd] (VCD).
 
-These folders contain boilerplate code that you will need to edit to create your own Packer multi-component plugin.
-A full guide to creating Packer plugins can be found at [Extending Packer](https://www.packer.io/docs/plugins/creation).
+The plugin includes one builder:
 
-In this repository you will also find a pre-defined GitHub Action configuration for the release workflow
-(`.goreleaser.yml` and `.github/workflows/release.yml`). The release workflow configuration makes sure the GitHub
-release artifacts are created with the correct binaries and naming conventions.
+- `vcd-iso` - This builder creates a virtual machine, uploads an ISO to a VCD catalog, installs an
+  operating system using boot commands, provisions software within the operating system, and then
+  exports the virtual machine as a vApp template. This is best for those who want to create images
+  from scratch using ISO files.
 
-Please see the [GitHub template repository documentation](https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template)
-for how to create a new repository from this template on GitHub.
+## Features
 
-## Packer plugin projects
+- **ISO-based VM creation** - Upload ISOs to VCD catalogs and create VMs from scratch
+- **Boot command support** - Send keystrokes to VM console via WebMKS protocol for automated OS installation
+- **HTTP server** - Serve kickstart/preseed files during installation
+- **CD Content injection** - Add files directly to the ISO (workaround for VCD single media slot limitation)
+- **SSH/WinRM communicator** - Connect to VMs for provisioning (Linux and Windows)
+- **EFI and TPM support** - Create UEFI-based VMs with virtual TPM (required for Windows 11)
+- **Export to catalog** - Export finished VMs as vApp templates
 
-Here's a non exaustive list of Packer plugins that you can checkout:
+## VCD Limitations and Workarounds
 
-* [github.com/hashicorp/packer-plugin-docker](https://github.com/hashicorp/packer-plugin-docker)
-* [github.com/exoscale/packer-plugin-exoscale](https://github.com/exoscale/packer-plugin-exoscale)
-* [github.com/sylviamoss/packer-plugin-comment](https://github.com/sylviamoss/packer-plugin-comment)
-* [github.com/hashicorp/packer-plugin-hashicups](https://github.com/hashicorp/packer-plugin-hashicups)
+### Single Media Slot
 
-Looking at their code will give you good examples.
+VMware Cloud Director only supports **one CD-ROM media attached at a time** per VM. This differs from
+other virtualization platforms like VMware vSphere or QEMU where you could mount multiple ISO images.
 
-## Build from source
+This limitation affects Packer workflows that need to provide additional files (kickstart, preseed,
+autounattend.xml) alongside the OS installer ISO.
 
-1. Clone this GitHub repository locally.
+### The cd_content Solution
 
-2. Run this command from the root directory: 
-```shell 
-go build -ldflags="-X github.com/hashicorp/packer-plugin-scaffolding/version.VersionPrerelease=dev" -o packer-plugin-scaffolding
+This plugin provides the `cd_content` feature as a workaround. Instead of mounting a separate ISO,
+`cd_content` **modifies the installer ISO** to include your additional files directly:
+
+```hcl
+source "vcd-iso" "example" {
+  iso_url      = "https://example.com/debian-12.iso"
+  iso_checksum = "sha256:..."
+
+  # Files are injected directly into the ISO
+  cd_content = {
+    "preseed.cfg"          = file("${path.root}/http/preseed.cfg")
+    "scripts/post-install" = file("${path.root}/scripts/post-install.sh")
+  }
+
+  # ...
+}
 ```
 
-3. After you successfully compile, the `packer-plugin-scaffolding` plugin binary file is in the root directory. 
+The modified ISO:
+- Contains all original files from the source ISO
+- Includes your additional files at the root level
+- Maintains bootability (isolinux/grub boot records are preserved)
+- Is uploaded to VCD and mounted as the boot media
 
-4. To install the compiled plugin, run the following command 
-```shell
-packer plugins install --path packer-plugin-scaffolding github.com/hashicorp/scaffolding
+> **Note:** The `cd_content` feature uses native Go ISO manipulation. Files are accessible from the
+> mounted CD-ROM inside the VM (e.g., `/cdrom/preseed.cfg` during Debian installation).
+
+## Requirements
+
+- [Packer][packer-install] >= 1.10.0
+- VMware Cloud Director 10.4+ (API version 38.0+)
+
+> [!NOTE]
+> The plugin has been tested with VMware Cloud Director 10.6.
+
+## Usage
+
+For examples on how to use this plugin with Packer refer to the [examples](examples/) directory of
+the repository.
+
+## Installation
+
+### Using Pre-built Releases
+
+#### Automatic Installation
+
+Packer v1.7.0 and later supports the `packer init` command which enables the automatic installation
+of Packer plugins. For more information, see the [Packer documentation][docs-packer-init].
+
+To install this plugin, copy and paste this code (HCL2) into your Packer configuration and run
+`packer init`.
+
+```hcl
+packer {
+  required_version = ">= 1.7.0"
+  required_plugins {
+    vcd = {
+      version = ">= 0.0.1"
+      source  = "github.com/juanfont/vcd"
+    }
+  }
+}
 ```
 
-### Build on *nix systems
-Unix like systems with the make, sed, and grep commands installed can use the `make dev` to execute the build from source steps. 
+#### Manual Installation
 
-### Build on Windows Powershell
-The preferred solution for building on Windows are steps 2-4 listed above.
-If you would prefer to script the building process you can use the following as a guide
+You can download the plugin from the GitHub [releases][releases-vcd-plugin]. Once you have
+downloaded the latest release archive for your target operating system and architecture, extract the
+release archive to retrieve the plugin binary file for your platform.
 
-```powershell
-$MODULE_NAME = (Get-Content go.mod | Where-Object { $_ -match "^module"  }) -replace 'module ',''
-$FQN = $MODULE_NAME -replace 'packer-plugin-',''
-go build -ldflags="-X $MODULE_NAME/version.VersionPrerelease=dev" -o packer-plugin-scaffolding.exe
-packer plugins install --path packer-plugin-scaffolding.exe $FQN
+To install the downloaded plugin, please follow the Packer documentation on
+[installing a plugin][docs-packer-plugin-install].
+
+### From Source
+
+If you prefer to build the plugin from sources, clone the GitHub repository locally and run the
+command `go build` from the repository root directory. Upon successful compilation, a
+`packer-plugin-vcd` plugin binary file can be found in the root directory.
+
+```bash
+git clone https://github.com/juanfont/packer-plugin-vcd.git
+cd packer-plugin-vcd
+go build
 ```
 
-## Running Acceptance Tests
+To install the compiled plugin, please follow the Packer documentation on
+[installing a plugin][docs-packer-plugin-install].
 
-Make sure to install the plugin locally using the steps in [Build from source](#build-from-source).
+## Configuration
 
-Once everything needed is set up, run:
+For more information on how to configure the plugin, please see the plugin documentation.
+
+- `vcd-iso` [builder documentation][docs-vcd-iso]
+
+## Network Considerations
+
+For ISO-based builds with preseed/kickstart, the VM needs network connectivity to fetch the preseed
+file from the Packer HTTP server during OS installation.
+
+### IP Allocation Modes
+
+VCD supports several IP allocation modes. This plugin supports:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `DHCP` | VM gets IP from DHCP server | Networks with DHCP enabled |
+| `MANUAL` | Static IP assignment | Networks without DHCP (IP pools) |
+
+> **Note:** The `POOL` mode in VCD allocates IPs from VCD's internal pool but doesn't configure them
+> inside the guest OS unless the VMware Tools are running (which is not the case at the beginning). 
+> For automated installations, use `DHCP` or `MANUAL` with `auto_discover_ip`.
+
+### DHCP Networks
+
+If your VCD network has DHCP enabled:
+
+```hcl
+network            = "my-network"
+ip_allocation_mode = "DHCP"
+
+# Debian preseed example
+boot_command = [
+  "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
 ```
-PACKER_ACC=1 go test -count 1 -v ./... -timeout=120m
+
+### Static IP Networks (Manual)
+
+If your network uses IP pools without DHCP, you have two options:
+
+#### Option 1: Auto-discover IP (Recommended)
+
+Enable `auto_discover_ip` to automatically find an available IP from the network's pool:
+
+```hcl
+network            = "my-network"
+ip_allocation_mode = "MANUAL"
+auto_discover_ip   = true
+
+# Debian preseed example (kickstart for RHEL/CentOS, autoinstall for Ubuntu)
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress={{ .VMIP }} ",
+  "netcfg/get_netmask={{ .Netmask }} ",
+  "netcfg/get_gateway={{ .Gateway }} ",
+  "netcfg/get_nameservers={{ .DNS }} ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
 ```
 
-This will run the acceptance tests for all plugins in this set.
+This queries the network configuration and makes these template variables available:
+- `{{ .VMIP }}` - The discovered available IP address
+- `{{ .Gateway }}` - Network gateway
+- `{{ .Netmask }}` - Network mask
+- `{{ .DNS }}` - DNS server
 
-## Registering Plugin as Packer Integration
+You can override gateway and DNS if needed:
 
-Partner and community plugins can be hard to find if a user doesn't know what 
-they are looking for. To assist with plugin discovery Packer offers an integration
-portal at https://developer.hashicorp.com/packer/integrations to list known integrations 
-that work with the latest release of Packer. 
+```hcl
+auto_discover_ip = true
+vm_gateway       = "10.0.0.1"    # Override discovered gateway
+vm_dns           = "8.8.8.8"     # Override discovered DNS
+```
 
-Registering a plugin as an integration requires [metadata configuration](./metadata.hcl) within the plugin
-repository and approval by the Packer team. To initiate the process of registering your 
-plugin as a Packer integration refer to the [Developing Plugins](https://developer.hashicorp.com/packer/docs/plugins/creation#registering-plugins) page.
+#### Option 2: Specify IP manually
 
-# Requirements
+If you prefer to specify the IP address manually, use variables for maintainability:
 
--	[packer-plugin-sdk](https://github.com/hashicorp/packer-plugin-sdk) >= v0.5.2
--	[Go](https://golang.org/doc/install) >= 1.20
+```hcl
+variable "vm_ip" {
+  type    = string
+  default = "10.0.0.100"
+}
 
-## Packer Compatibility
-This scaffolding template is compatible with Packer >= v1.10.2
+variable "vm_netmask" {
+  type    = string
+  default = "255.255.255.0"
+}
+
+variable "vm_gateway" {
+  type    = string
+  default = "10.0.0.1"
+}
+
+variable "vm_dns" {
+  type    = string
+  default = "10.0.0.1"
+}
+
+source "vcd-iso" "example" {
+  # ...
+  network            = "my-network"
+  ip_allocation_mode = "MANUAL"
+  vm_ip              = var.vm_ip
+
+  # Debian preseed example (other distros: kickstart for RHEL/CentOS, autoinstall for Ubuntu)
+  boot_command = [
+    "<esc>auto ",
+    "netcfg/disable_autoconfig=true ",
+    "netcfg/get_ipaddress=${var.vm_ip} ",
+    "netcfg/get_netmask=${var.vm_netmask} ",
+    "netcfg/get_gateway=${var.vm_gateway} ",
+    "netcfg/get_nameservers=${var.vm_dns} ",
+    "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+  ]
+}
+```
+
+> **Note:** The boot command syntax above uses Debian preseed. Other distributions use different
+> automated installation methods: kickstart for RHEL/CentOS/Fedora, autoinstall for Ubuntu 20.04+.
+
+## Contributing
+
+If you discover a bug or would like to suggest a feature or an enhancement, please use the GitHub
+[issues][issues].
+
+## GenAI Disclaimer
+
+I have used Claude Code for this project. I have been working with VMware Cloud Director and govcd ([docker-machine-driver-vcd][docker-machine-driver-vcd], [fleeting-plugin-vcd][fleeting-plugin-vcd]) for years now, but this project was way bigger than and it had a major showstopper: VCD does not have an API call to "press keys" and send them to the VM, so in order to type the boot command it was necessary to reverse engineering the WebSockets Web Console and "type" them in the console. Claude helped A LOT.
+
+## License
+
+BSD-3-Clause
+
+[vmware-vcd]: https://www.vmware.com/products/cloud-director.html
+[packer-install]: https://developer.hashicorp.com/packer/install
+[docs-packer-init]: https://developer.hashicorp.com/packer/docs/commands/init
+[docs-packer-plugin-install]: https://developer.hashicorp.com/packer/docs/plugins/install-plugins
+[docs-vcd-iso]: https://github.com/juanfont/packer-plugin-vcd/blob/main/docs/builders/vcd-iso.mdx
+[releases-vcd-plugin]: https://github.com/juanfont/packer-plugin-vcd/releases
+[issues]: https://github.com/juanfont/packer-plugin-vcd/issues
+[docker-machine-driver-vcd]: https://github.com/juanfont/docker-machine-driver-vcd
+[fleeting-plugin-vcd]: https://github.com/juanfont/fleeting-plugin-vcd
