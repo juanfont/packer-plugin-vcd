@@ -1,4 +1,4 @@
-NAME=scaffolding
+NAME=vcd
 BINARY=packer-plugin-${NAME}
 
 COUNT?=1

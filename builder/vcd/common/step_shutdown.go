@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/communicator"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
+	"github.com/juanfont/packer-plugin-vcd/builder/vcd/driver"
 )
 
 type ShutdownConfig struct {
@@ -43,25 +44,30 @@ func (c *ShutdownConfig) Prepare(comm communicator.Config) (warnings []string, e
 }
 
 type StepShutdown struct {
-	Config *ShutdownConfig
+	Config         *ShutdownConfig
+	CommType       string // "none", "ssh", "winrm", etc.
 }
 
 func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packersdk.Ui)
-	vm := state.Get("vm").(*driver.VirtualMachineDriver)
+	vm := state.Get("vm").(driver.VirtualMachine)
 
 	if off, _ := vm.IsPoweredOff(); off {
 		ui.Say("Virtual machine is already powered off.")
 		return multistep.ActionContinue
 	}
 
-	comm, _ := state.Get("communicator").(packersdk.Communicator)
-	if comm == nil {
+	// Check if we have a communicator (not "none")
+	hasCommunicator := s.CommType != "" && s.CommType != "none"
+
+	if !hasCommunicator {
+		// No communicator - just wait for VM to shutdown on its own
 		ui.Sayf("Please shutdown virtual machine within %s.", s.Config.Timeout)
 	} else if s.Config.DisableShutdown {
 		ui.Say("Automatic shutdown disabled. Please shutdown virtual machine.")
 	} else if s.Config.Command != "" {
-		// Communicator is not needed unless shutdown_command is populated
+		// Run shutdown command via communicator
+		comm, _ := state.Get("communicator").(packersdk.Communicator)
 		ui.Say("Running shutdown command...")
 		log.Printf("[INFO] Shutdown command: %s", s.Config.Command)
 		var stdout, stderr bytes.Buffer
@@ -76,8 +82,9 @@ func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multis
 			return multistep.ActionHalt
 		}
 	} else {
-		ui.Sayf("Please shutdown virtual machine within %s.", s.Config.Timeout)
-		err := vm.StartShutdown()
+		// No shutdown command specified - try VMware Tools graceful shutdown
+		ui.Sayf("Shutting down virtual machine via VMware Tools (timeout: %s)...", s.Config.Timeout)
+		err := vm.Shutdown()
 		if err != nil {
 			state.Put("error", fmt.Errorf("error shutting down virtual machine: %v", err))
 			return multistep.ActionHalt
@@ -85,7 +92,7 @@ func (s *StepShutdown) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	log.Printf("[INFO] Waiting a maximum of %s for shutdown to complete.", s.Config.Timeout)
-	err := vm.WaitForShutdown(ctx, s.Config.Timeout)
+	err := vm.WaitForPowerOff(ctx, s.Config.Timeout)
 	if err != nil {
 		state.Put("error", err)
 		return multistep.ActionHalt
