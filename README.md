@@ -56,18 +56,19 @@ The modified ISO:
 - Maintains bootability (isolinux/grub boot records are preserved)
 - Is uploaded to VCD and mounted as the boot media
 
-> **Note:** For Linux ISOs (ISO9660), the plugin uses native Go for ISO manipulation. For Windows ISOs
-> (UDF filesystem), external tools are required: `p7zip-full` and `genisoimage`. Files are accessible
-> from the mounted CD-ROM inside the VM (e.g., `/cdrom/preseed.cfg` during Debian installation).
+> **Note:** For Linux ISOs (ISO9660), the plugin requires `xorriso` to modify the ISO while preserving
+> boot records. For Windows ISOs (UDF filesystem), `p7zip-full` and `genisoimage` are required. Files
+> are accessible from the mounted CD-ROM inside the VM (e.g., `/cdrom/preseed.cfg` during Debian installation).
 
 ## Requirements
 
 - [Packer][packer-install] >= 1.10.0
 - VMware Cloud Director 10.4+ (API version 38.0+)
+- For Linux ISO modification (cd_content): `xorriso`
 - For Windows ISO modification (cd_content): `p7zip-full` and `genisoimage`
   ```bash
   # Debian/Ubuntu
-  apt-get install p7zip-full genisoimage
+  apt-get install xorriso p7zip-full genisoimage
   ```
 
 > [!NOTE]
