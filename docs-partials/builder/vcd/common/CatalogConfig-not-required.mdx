@@ -1,0 +1,19 @@
+<!-- Code generated from the comments of the CatalogConfig struct in builder/vcd/common/step_create_temp_catalog.go; DO NOT EDIT MANUALLY -->
+
+- `iso_catalog` (string) - The name of an existing catalog to use for ISO upload.
+  If not set, a temporary catalog will be created and deleted after the build.
+  Using an existing catalog enables ISO caching across builds.
+  This catalog is separate from the output catalog where the final vApp template is exported.
+
+- `temp_catalog_prefix` (string) - Prefix for temporary catalog names when creating a new catalog.
+  Only used when iso_catalog is not set.
+  Defaults to "packer-".
+
+- `cache_iso` (bool) - If true and using an existing catalog (iso_catalog), check if the ISO already exists
+  before uploading. This enables reusing ISOs across multiple builds.
+  Defaults to true when iso_catalog is specified.
+
+- `cache_overwrite` (bool) - If true, overwrite existing cached ISO even if it exists in the catalog.
+  Defaults to false.
+
+<!-- End of code generated from the comments of the CatalogConfig struct in builder/vcd/common/step_create_temp_catalog.go; -->

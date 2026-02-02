@@ -1,0 +1,413 @@
+---
+description: |
+  The vcd-iso builder creates virtual machines on VMware Cloud Director from ISO images.
+page_title: VCD ISO - Builders
+nav_title: ISO
+---
+
+# VMware Cloud Director ISO Builder
+
+Type: `vcd-iso`
+
+The `vcd-iso` builder creates a virtual machine on VMware Cloud Director (VCD), uploads an ISO to a
+catalog, installs an operating system using boot commands, provisions software, and exports the
+virtual machine as a vApp template.
+
+This builder is ideal for creating golden images from scratch using ISO installation media.
+
+## Basic Example
+
+This example builds a Debian 12 image with POOL IP allocation:
+
+```hcl
+source "vcd-iso" "debian" {
+  # VCD Connection
+  host                = "vcd.example.com"
+  username            = "admin"
+  password            = "secret"
+  org                 = "my-org"
+  vdc                 = "my-vdc"
+  insecure_connection = true
+
+  # ISO
+  iso_url      = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.9.0-amd64-netinst.iso"
+  iso_checksum = "sha256:..."
+
+  # VM Configuration
+  vm_name       = "debian-template"
+  vapp          = "packer-build"
+  create_vapp   = true
+  guest_os_type = "debian12_64Guest"
+  CPUs          = 2
+  memory        = 2048
+  disk_size_mb  = 20480
+
+  # Network - POOL lets VCD assign IP, which is then used in boot_command
+  network            = "my-network"
+  ip_allocation_mode = "POOL"
+  vm_dns             = "8.8.8.8"
+
+  # HTTP server for preseed
+  http_directory = "http"
+
+  # Boot command with network configuration
+  boot_wait    = "5s"
+  boot_command = [
+    "<esc><wait>",
+    "auto ",
+    "netcfg/disable_autoconfig=true ",
+    "netcfg/get_ipaddress={{ .VMIP }} ",
+    "netcfg/get_netmask={{ .VMNetmask }} ",
+    "netcfg/get_gateway={{ .VMGateway }} ",
+    "netcfg/get_nameservers={{ .VMDNS }} ",
+    "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+    "<enter>"
+  ]
+
+  # SSH
+  ssh_username = "packer"
+  ssh_password = "packer"
+  ssh_timeout  = "30m"
+
+  # Shutdown
+  shutdown_command = "echo packer | sudo -S shutdown -P now"
+
+  # Export to catalog
+  export_to_catalog {
+    catalog        = "templates"
+    template_name  = "debian-12-base"
+    description    = "Debian 12 base image with SSH enabled"
+    create_catalog = true
+  }
+}
+
+build {
+  sources = ["source.vcd-iso.debian"]
+}
+```
+
+## Configuration Reference
+
+### VCD Connection
+
+@include 'builder/vcd/common/ConnectConfig-not-required.mdx'
+
+### Location
+
+@include 'builder/vcd/common/LocationConfig-not-required.mdx'
+
+### ISO
+
+@include 'packer-plugin-sdk/multistep/commonsteps/ISOConfig-not-required.mdx'
+
+### Catalog
+
+@include 'builder/vcd/common/CatalogConfig-not-required.mdx'
+
+### Hardware
+
+@include 'builder/vcd/common/HardwareConfig-not-required.mdx'
+
+### Boot Command
+
+@include 'builder/vcd/common/BootCommandConfig-not-required.mdx'
+
+### HTTP Directory
+
+@include 'packer-plugin-sdk/multistep/commonsteps/HTTPConfig-not-required.mdx'
+
+### Communicator
+
+#### Common Options
+
+@include 'packer-plugin-sdk/communicator/Config-not-required.mdx'
+
+#### SSH
+
+@include 'packer-plugin-sdk/communicator/SSH-not-required.mdx'
+
+#### WinRM
+
+@include 'packer-plugin-sdk/communicator/WinRM-not-required.mdx'
+
+### Shutdown
+
+@include 'builder/vcd/common/ShutdownConfig-not-required.mdx'
+
+### Export to Catalog
+
+@include 'builder/vcd/common/ExportToCatalogConfig-not-required.mdx'
+
+## VCD Limitations
+
+### Single Media Slot
+
+VMware Cloud Director only supports **one CD-ROM media attached at a time** per VM. This differs from
+other virtualization platforms like VMware vSphere or QEMU where you could mount multiple ISO images.
+
+This limitation affects Packer workflows that need to provide additional files (kickstart, preseed,
+autounattend.xml) alongside the OS installer ISO.
+
+### The cd_content Solution
+
+This plugin provides the `cd_content` feature as a workaround. Instead of mounting a separate ISO,
+`cd_content` **modifies the installer ISO** to include your additional files directly:
+
+```hcl
+source "vcd-iso" "example" {
+  iso_url      = "https://example.com/debian-12.iso"
+  iso_checksum = "sha256:..."
+
+  # Files are injected directly into the ISO
+  cd_content = {
+    "preseed.cfg"          = file("${path.root}/http/preseed.cfg")
+    "scripts/post-install" = file("${path.root}/scripts/post-install.sh")
+    "config/settings.conf" = "[settings]\nkey=value"
+  }
+
+  # Reference files from the CD during installation
+  boot_command = [
+    "<esc>auto preseed/file=/cdrom/preseed.cfg<enter>"
+  ]
+}
+```
+
+The modified ISO:
+- Contains all original files from the source ISO
+- Includes your additional files at the specified paths
+- Maintains bootability (isolinux/grub boot records are preserved)
+- Is uploaded to VCD and mounted as the boot media
+
+Files are accessible from the mounted CD-ROM inside the VM:
+- During Debian installation: `/cdrom/preseed.cfg`
+- After mounting in Linux: `/mnt/cdrom/preseed.cfg`
+- In Windows: `D:\preseed.cfg` (or similar drive letter)
+
+> **Note:** The `cd_content` feature uses native Go ISO manipulation. No external tools (like
+> `mkisofs` or `xorriso`) are required.
+
+## Network Considerations
+
+For ISO-based builds with preseed/kickstart, the VM needs network connectivity to fetch the preseed
+file from the Packer HTTP server during OS installation.
+
+### IP Allocation Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `POOL` | VCD assigns IP from pool (default) | Networks with IP pools |
+| `MANUAL` | User specifies IP via `vm_ip` | When you need a specific IP |
+| `DHCP` | OS gets IP from DHCP server | Networks with DHCP enabled |
+
+### POOL Mode (Recommended)
+
+Let VCD assign an IP from the network pool. The plugin queries the assigned IP and makes it
+available as template variables:
+
+```hcl
+ip_allocation_mode = "POOL"  # This is the default
+vm_dns             = "8.8.8.8"  # Optional: override DNS
+
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress={{ .VMIP }} ",
+  "netcfg/get_netmask={{ .VMNetmask }} ",
+  "netcfg/get_gateway={{ .VMGateway }} ",
+  "netcfg/get_nameservers={{ .VMDNS }} ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+### MANUAL Mode
+
+Specify the IP address explicitly:
+
+```hcl
+ip_allocation_mode = "MANUAL"
+vm_ip              = "10.0.0.100"
+vm_gateway         = "10.0.0.1"
+vm_dns             = "8.8.8.8"
+
+boot_command = [
+  "<esc>auto ",
+  "netcfg/disable_autoconfig=true ",
+  "netcfg/get_ipaddress={{ .VMIP }} ",
+  "netcfg/get_netmask={{ .VMNetmask }} ",
+  "netcfg/get_gateway={{ .VMGateway }} ",
+  "netcfg/get_nameservers={{ .VMDNS }} ",
+  "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+### DHCP Mode
+
+If your VCD network has DHCP enabled, the installer will automatically obtain an IP address:
+
+```hcl
+ip_allocation_mode = "DHCP"
+
+boot_command = [
+  "auto url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<enter>"
+]
+```
+
+## Boot Command
+
+The boot command is sent to the VM console via the WebMKS protocol. It supports standard Packer
+boot command syntax:
+
+- `<enter>`, `<return>` - Enter key
+- `<esc>` - Escape key
+- `<tab>` - Tab key
+- `<f1>` through `<f12>` - Function keys
+- `<wait>`, `<wait5>`, `<wait10>` - Wait for 1, 5, or 10 seconds
+- `<waitXs>`, `<waitXm>` - Wait for X seconds or minutes
+
+Template variables available:
+
+- `{{ .HTTPIP }}` - IP address of the HTTP server
+- `{{ .HTTPPort }}` - Port of the HTTP server
+- `{{ .Name }}` - VM name
+- `{{ .VMIP }}` - VM IP address (for POOL or MANUAL modes)
+- `{{ .VMGateway }}` - Network gateway
+- `{{ .VMNetmask }}` - Network mask (e.g., 255.255.255.0)
+- `{{ .VMPrefix }}` - CIDR prefix length (e.g., 24)
+- `{{ .VMDNS }}` - DNS server
+
+## EFI Firmware and TPM
+
+The builder supports EFI firmware and virtual TPM (Trusted Platform Module), which are required for
+Windows 11 and other modern operating systems.
+
+### Firmware Options
+
+| Value | Description |
+|-------|-------------|
+| `bios` | Legacy BIOS boot (default) |
+| `efi` | UEFI boot |
+| `efi-secure` | UEFI with Secure Boot enabled |
+
+### TPM Support
+
+Virtual TPM can be enabled with `vtpm = true`. This requires EFI firmware (`firmware = "efi"` or
+`firmware = "efi-secure"`).
+
+```hcl
+source "vcd-iso" "modern-linux" {
+  # ... connection and VM config ...
+
+  # Enable EFI firmware
+  firmware = "efi"
+
+  # Enable virtual TPM (optional)
+  vtpm = true
+}
+```
+
+## Windows Builds
+
+For Windows builds, use the WinRM communicator. Windows 11 requires EFI firmware and TPM.
+
+### Windows 11 Example
+
+For Windows builds, use `cd_content` to inject `Autounattend.xml` directly into the ISO.
+This avoids needing an HTTP server for unattended installation.
+
+**Important:** The filename must be `Autounattend.xml` (capital A) for Windows to auto-detect it.
+
+```hcl
+source "vcd-iso" "windows11" {
+  # VCD Connection
+  host                = "vcd.example.com"
+  username            = "admin"
+  password            = "secret"
+  org                 = "my-org"
+  vdc                 = "my-vdc"
+  insecure_connection = true
+
+  # ISO
+  iso_url      = "path/to/windows11.iso"
+  iso_checksum = "sha256:..."
+
+  # Inject Autounattend.xml into the ISO (capital A required!)
+  cd_content = {
+    "Autounattend.xml" = file("autounattend.xml")
+  }
+
+  # VM Configuration
+  vm_name       = "win11-template"
+  guest_os_type = "windows2019srvNext_64Guest"
+  CPUs          = 4
+  memory        = 8192
+  disk_size_mb  = 65536
+
+  # EFI + TPM (required for Windows 11)
+  firmware = "efi"
+  vTPM     = true
+
+  # Network
+  network            = "my-network"
+  ip_allocation_mode = "POOL"
+
+  # Boot - press key to boot from CD
+  # EFI + TPM init can take 5-15s, spread keys over time to catch the window
+  boot_wait    = "5s"
+  boot_command = ["a", "<wait2s>", "a", "<wait2s>", "a", "<wait2s>", "a", "<wait2s>", "a"]
+
+  # WinRM communicator
+  communicator   = "winrm"
+  winrm_username = "Administrator"
+  winrm_password = "YourPassword"
+  winrm_timeout  = "2h"
+
+  # Export
+  export_to_catalog {
+    catalog       = "templates"
+    template_name = "windows-11-base"
+    overwrite     = true
+  }
+}
+
+build {
+  sources = ["source.vcd-iso.windows11"]
+
+  provisioner "powershell" {
+    inline = ["Write-Host 'Windows 11 VM ready!'"]
+  }
+}
+```
+
+### Windows Server Example (without TPM)
+
+For older Windows versions that don't require TPM:
+
+```hcl
+source "vcd-iso" "windows-server" {
+  # ... VCD and VM configuration ...
+
+  # EFI is recommended but TPM not required
+  firmware = "efi"
+
+  communicator   = "winrm"
+  winrm_username = "Administrator"
+  winrm_password = "YourPassword"
+  winrm_timeout  = "2h"
+}
+```
+
+### WinRM Configuration
+
+Your `autounattend.xml` must enable WinRM:
+
+```xml
+<SynchronousCommand>
+  <CommandLine>winrm quickconfig -q</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service @{AllowUnencrypted="true"}</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand>
+  <CommandLine>winrm set winrm/config/service/auth @{Basic="true"}</CommandLine>
+</SynchronousCommand>
+```

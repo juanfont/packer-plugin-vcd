@@ -1,9 +1,38 @@
-main
+# Binaries
+packer-plugin-vcd
+packer-plugin-vcd_SHA256SUM
 packer-plugin-scaffolding
+main
+
+# Environment
+.env
+.env.*
+
+# Packer logs
 **/packer_log*.txt
 **/git_*test.pkr.hcl
 crash.log
 
+# Build artifacts
 dist/*
 .docs/*
 docs.zip
+
+# Test artifacts
+*.iso
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+scripts/
+CLAUDE.md

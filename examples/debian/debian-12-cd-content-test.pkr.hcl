@@ -1,0 +1,86 @@
+packer {
+  required_plugins {
+    vcd = {
+      version = ">= 0.0.3"
+      source  = "github.com/juanfont/vcd"
+    }
+  }
+}
+
+source "vcd-iso" "debian-12-cd-content-test" {
+  # VCD Connection
+  host                = var.vcd_host
+  username            = var.vcd_username
+  password            = var.vcd_password
+  org                 = var.vcd_org
+  vdc                 = var.vcd_vdc
+  insecure_connection = var.vcd_insecure
+
+  # ISO Configuration
+  iso_url      = "https://cdimage.debian.org/cdimage/archive/12.9.0/amd64/iso-cd/debian-12.9.0-amd64-netinst.iso"
+  iso_checksum = "sha256:1257373c706d8c07e6917942736a865dfff557d21d76ea3040bb1039eb72a054"
+
+  # CD Content - test adding files to the ISO
+  cd_content = {
+    "test-file.txt"        = "This is a test file added via cd_content"
+    "config/settings.conf" = "[settings]\nkey=value\ntest=true"
+  }
+
+  # VM Configuration
+  vm_name       = "${var.vm_name}-cd-content-test"
+  guest_os_type = "debian12_64Guest"
+  CPUs          = 2
+  memory        = 2048
+  disk_size_mb  = 20480
+
+  network            = var.vcd_network
+  ip_allocation_mode = "POOL"
+
+  # HTTP server for preseed
+  http_directory = "http"
+
+  # Boot command for Debian installer with auto-discovered network info
+  boot_wait = "5s"
+  boot_command = [
+    "<esc><wait>",
+    "auto ",
+    "netcfg/disable_autoconfig=true ",
+    "netcfg/get_ipaddress={{ .VMIP }} ",
+    "netcfg/get_netmask={{ .Netmask }} ",
+    "netcfg/get_gateway={{ .Gateway }} ",
+    "netcfg/get_nameservers={{ .DNS }} ",
+    "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
+    "<enter>"
+  ]
+
+  # SSH Configuration
+  ssh_username = var.ssh_username
+  ssh_password = var.ssh_password
+  ssh_timeout  = "30m"
+
+  # Shutdown
+  shutdown_command = "echo '${var.ssh_password}' | sudo -S shutdown -P now"
+}
+
+build {
+  sources = ["source.vcd-iso.debian-12-cd-content-test"]
+
+  provisioner "shell" {
+    inline = [
+      "echo '=== Testing cd_content ==='",
+      "echo 'Mounting CD-ROM...'",
+      "sudo mkdir -p /mnt/cdrom",
+      "sudo mount /dev/cdrom /mnt/cdrom || sudo mount /dev/sr0 /mnt/cdrom",
+      "echo ''",
+      "echo '=== Checking for cd_content files ==='",
+      "echo 'Looking for test-file.txt:'",
+      "cat /mnt/cdrom/test-file.txt",
+      "echo ''",
+      "echo 'Looking for config/settings.conf:'",
+      "cat /mnt/cdrom/config/settings.conf",
+      "echo ''",
+      "echo '=== cd_content verification PASSED ==='",
+      "sudo umount /mnt/cdrom"
+    ]
+  }
+}
