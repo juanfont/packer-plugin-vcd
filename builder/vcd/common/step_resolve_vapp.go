@@ -135,7 +135,7 @@ func (s *StepResolveVApp) Cleanup(state multistep.StateBag) {
 		}
 	}
 
-	ui.Sayf("Deleting vApp: %s", vappName)
+	ui.Sayf("Deleting vApp: %s (waiting for completion)...", vappName)
 	task, err := vappObj.Delete()
 	if err != nil {
 		ui.Errorf("Error deleting vApp: %s", err)
@@ -143,5 +143,7 @@ func (s *StepResolveVApp) Cleanup(state multistep.StateBag) {
 	}
 	if err := task.WaitTaskCompletion(); err != nil {
 		ui.Errorf("Error waiting for vApp deletion: %s", err)
+	} else {
+		ui.Say("vApp deleted successfully")
 	}
 }

@@ -169,21 +169,32 @@ func (s *StepCreateVM) Cleanup(state multistep.StateBag) {
 		return
 	}
 
+	// Log why we're cleaning up
+	if cancelled {
+		ui.Say("Build cancelled, cleaning up...")
+	} else if errRaw, ok := state.GetOk("error"); ok {
+		ui.Sayf("Build failed: %s", errRaw.(error))
+		ui.Say("Cleaning up...")
+	}
+
 	vm := vmRaw.(driver.VirtualMachine)
 	vmName := vm.GetName()
 
-	ui.Sayf("Deleting VM: %s", vmName)
+	ui.Sayf("Deleting VM: %s (waiting for completion)...", vmName)
 
 	// Power off if needed
 	if on, _ := vm.IsPoweredOn(); on {
+		ui.Say("Powering off VM...")
 		_ = vm.PowerOff()
 	}
 
-	// Delete the VM
+	// Delete the VM (govcd.VM.Delete() waits for task completion internally)
 	govcdVM := vm.GetVM()
 	err := govcdVM.Delete()
 	if err != nil {
 		ui.Errorf("Error deleting VM: %s", err)
+	} else {
+		ui.Say("VM deleted successfully")
 	}
 }
 

@@ -496,13 +496,28 @@ func (d *VCDDriver) UploadMediaImage(catalog *govcd.Catalog, name, description, 
 		return nil, fmt.Errorf("error waiting for media import: %w", err)
 	}
 
-	// Get the uploaded media
-	media, err := catalog.GetMediaByName(name, true)
-	if err != nil {
-		return nil, fmt.Errorf("error getting uploaded media %s: %w", name, err)
+	// Wait for media to reach RESOLVED status (status = 1)
+	// Even after task completion, VCD may still be processing internally
+	maxStatusRetries := 30
+	statusRetryDelay := 10 * time.Second
+
+	var media *govcd.Media
+	for i := 0; i < maxStatusRetries; i++ {
+		media, err = catalog.GetMediaByName(name, true)
+		if err != nil {
+			return nil, fmt.Errorf("error getting uploaded media %s: %w", name, err)
+		}
+
+		if media.Media.Status == 1 { // RESOLVED
+			return media, nil
+		}
+
+		fmt.Printf("Media status is %d (need 1=RESOLVED), waiting %v... (%d/%d)\n",
+			media.Media.Status, statusRetryDelay, i+1, maxStatusRetries)
+		time.Sleep(statusRetryDelay)
 	}
 
-	return media, nil
+	return nil, fmt.Errorf("media %s never reached RESOLVED status after upload (current: %d)", name, media.Media.Status)
 }
 
 // --- Internal helpers ---

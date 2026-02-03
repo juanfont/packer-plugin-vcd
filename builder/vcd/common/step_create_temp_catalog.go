@@ -149,10 +149,12 @@ func (s *StepCreateTempCatalog) Cleanup(state multistep.StateBag) {
 	}
 
 	catalogName, _ := state.GetOk("catalog_name")
-	ui.Sayf("Deleting temporary catalog: %s", catalogName)
+	ui.Sayf("Deleting temporary catalog: %s (waiting for completion)...", catalogName)
 
 	err := d.DeleteCatalog(adminCatalog.(*govcd.AdminCatalog))
 	if err != nil {
 		ui.Errorf("Error deleting temporary catalog: %s", err)
+	} else {
+		ui.Say("Temporary catalog deleted successfully")
 	}
 }
