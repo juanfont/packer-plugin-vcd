@@ -490,6 +490,12 @@ func (d *VCDDriver) UploadMediaImage(catalog *govcd.Catalog, name, description, 
 		return nil, fmt.Errorf("error during media upload: %w", err)
 	}
 
+	// Wait for VCD to import/process the media (separate from upload)
+	err = uploadTask.WaitTaskCompletion()
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for media import: %w", err)
+	}
+
 	// Get the uploaded media
 	media, err := catalog.GetMediaByName(name, true)
 	if err != nil {
