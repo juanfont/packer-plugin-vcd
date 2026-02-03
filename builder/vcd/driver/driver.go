@@ -476,8 +476,8 @@ func (d *VCDDriver) DeleteCatalog(catalog *govcd.AdminCatalog) error {
 }
 
 func (d *VCDDriver) UploadMediaImage(catalog *govcd.Catalog, name, description, filePath string) (*govcd.Media, error) {
-	// Upload with 10MB chunk size
-	const uploadPieceSize = 10 * 1024 * 1024
+	// Upload with 1MB chunk size (same as terraform-provider-vcd default)
+	const uploadPieceSize = 1 * 1024 * 1024
 
 	uploadTask, err := catalog.UploadMediaImage(name, description, filePath, uploadPieceSize)
 	if err != nil {
