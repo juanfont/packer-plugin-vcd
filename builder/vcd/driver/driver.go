@@ -57,7 +57,6 @@ type Driver interface {
 
 	// Catalog operations
 	GetCatalog(name string) (*govcd.Catalog, error)
-	CreateCatalog(name, description string) (*govcd.AdminCatalog, error)
 	CreateCatalogWithStorageProfile(name, description string, storageProfileRef *types.Reference) (*govcd.AdminCatalog, error)
 	DeleteCatalog(catalog *govcd.AdminCatalog) error
 	UploadMediaImage(catalog *govcd.Catalog, name, description, filePath string) (*govcd.Media, error)
@@ -419,32 +418,18 @@ func incrementIP(ip net.IP) {
 	}
 }
 
-// --- Catalog Operations ---
-
 func (d *VCDDriver) GetCatalog(name string) (*govcd.Catalog, error) {
-	org, err := d.GetOrg()
-	if err != nil {
-		return nil, err
-	}
-
-	catalog, err := org.GetCatalogByName(name, true)
-	if err != nil {
-		return nil, fmt.Errorf("error getting catalog %s: %w", name, err)
-	}
-	return catalog, nil
-}
-
-func (d *VCDDriver) CreateCatalog(name, description string) (*govcd.AdminCatalog, error) {
+	// Use admin org to get catalog - regular org may not see catalogs
+	// created via admin API
 	adminOrg, err := d.GetAdminOrg()
 	if err != nil {
 		return nil, err
 	}
-
-	catalog, err := adminOrg.CreateCatalog(name, description)
+	catalog, err := adminOrg.GetCatalogByName(name, true)
 	if err != nil {
-		return nil, fmt.Errorf("error creating catalog %s: %w", name, err)
+		return nil, fmt.Errorf("error getting catalog %s: %w", name, err)
 	}
-	return &catalog, nil
+	return catalog, nil
 }
 
 func (d *VCDDriver) CreateCatalogWithStorageProfile(name, description string, storageProfileRef *types.Reference) (*govcd.AdminCatalog, error) {
@@ -476,15 +461,45 @@ func (d *VCDDriver) DeleteCatalog(catalog *govcd.AdminCatalog) error {
 }
 
 func (d *VCDDriver) UploadMediaImage(catalog *govcd.Catalog, name, description, filePath string) (*govcd.Media, error) {
-	// Upload with 1MB chunk size (same as terraform-provider-vcd default)
-	const uploadPieceSize = 1 * 1024 * 1024
+	// Upload with 10MB chunks - larger chunks reduce HTTP round-trips and
+	// help complete uploads before server-side connection timeouts
+	const uploadPieceSize = 10 * 1024 * 1024
+	const maxRetries = 3
 
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Use unique name per attempt to avoid "name not unique" errors from
+		// partially uploaded media that VCD won't let us delete
+		uploadName := name
+		if attempt > 1 {
+			ext := ""
+			base := name
+			if idx := len(name) - 4; idx > 0 && name[idx] == '.' {
+				ext = name[idx:]
+				base = name[:idx]
+			}
+			uploadName = fmt.Sprintf("%s-retry%d%s", base, attempt, ext)
+			fmt.Printf("Upload attempt %d/%d (previous failed: %v)\n", attempt, maxRetries, lastErr)
+		}
+
+		media, err := d.uploadMediaOnce(catalog, uploadName, description, filePath, uploadPieceSize)
+		if err == nil {
+			return media, nil
+		}
+		lastErr = err
+		fmt.Printf("Upload attempt %d failed: %v\n", attempt, err)
+	}
+
+	return nil, fmt.Errorf("upload failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+func (d *VCDDriver) uploadMediaOnce(catalog *govcd.Catalog, name, description, filePath string, uploadPieceSize int64) (*govcd.Media, error) {
 	uploadTask, err := catalog.UploadMediaImage(name, description, filePath, uploadPieceSize)
 	if err != nil {
 		return nil, fmt.Errorf("error starting media upload: %w", err)
 	}
 
-	// Wait for upload to complete
+	// Wait for upload to complete - must check returned error
 	err = uploadTask.ShowUploadProgress()
 	if err != nil {
 		return nil, fmt.Errorf("error during media upload: %w", err)
@@ -534,8 +549,15 @@ func newClient(apiURL url.URL, org string, username string, password string, tok
 					},
 					Proxy:               http.ProxyFromEnvironment,
 					TLSHandshakeTimeout: 120 * time.Second,
+					DialContext: (&net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}).DialContext,
+					MaxIdleConns:        100,
+					IdleConnTimeout:     0, // No idle timeout - keep connections alive
+					ExpectContinueTimeout: 10 * time.Second,
 				},
-				Timeout: 600 * time.Second,
+				Timeout: 0, // No timeout - uploads can take a long time
 			},
 			MaxRetryTimeout: 60,
 		},
