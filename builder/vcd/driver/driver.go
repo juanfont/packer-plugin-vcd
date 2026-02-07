@@ -461,9 +461,10 @@ func (d *VCDDriver) DeleteCatalog(catalog *govcd.AdminCatalog) error {
 }
 
 func (d *VCDDriver) UploadMediaImage(catalog *govcd.Catalog, name, description, filePath string) (*govcd.Media, error) {
-	// Upload with 10MB chunks - larger chunks reduce HTTP round-trips and
-	// help complete uploads before server-side connection timeouts
-	const uploadPieceSize = 10 * 1024 * 1024
+	// Upload with 50MB chunks - larger chunks reduce HTTP round-trips and
+	// help complete uploads before server-side connection timeouts.
+	// 10MB was too small for ISOs >650MB on some VCD servers.
+	const uploadPieceSize = 50 * 1024 * 1024
 	const maxRetries = 3
 
 	var lastErr error
