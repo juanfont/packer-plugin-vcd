@@ -28,6 +28,7 @@ source "vcd-iso" "debian-12" {
   disk_size_mb  = 20480
 
   network            = var.vcd_network
+  storage_profile    = var.vcd_storage_profile
   ip_allocation_mode = "POOL"
 
   # HTTP server for preseed
@@ -40,9 +41,9 @@ source "vcd-iso" "debian-12" {
     "auto ",
     "netcfg/disable_autoconfig=true ",
     "netcfg/get_ipaddress={{ .VMIP }} ",
-    "netcfg/get_netmask={{ .Netmask }} ",
-    "netcfg/get_gateway={{ .Gateway }} ",
-    "netcfg/get_nameservers={{ .DNS }} ",
+    "netcfg/get_netmask={{ .VMNetmask }} ",
+    "netcfg/get_gateway={{ .VMGateway }} ",
+    "netcfg/get_nameservers={{ .VMDNS }} ",
     "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
     "<enter>"
   ]

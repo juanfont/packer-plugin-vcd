@@ -36,6 +36,12 @@ variable "vcd_insecure" {
   description = "Allow insecure TLS connections"
 }
 
+variable "vcd_storage_profile" {
+  type        = string
+  default     = ""
+  description = "VCD storage profile name. If empty, uses VDC default."
+}
+
 # VM Configuration
 variable "vm_name" {
   type        = string

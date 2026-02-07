@@ -79,7 +79,7 @@ func init() {
 	consoleTestCmd.Flags().Bool("enter", false, "Press Enter after text")
 
 	// Flags for create-vm
-	createVMCmd.Flags().String("catalog", "packer-iso-test-1767538918", "Catalog containing the ISO")
+	createVMCmd.Flags().String("catalog", "", "Catalog containing the ISO")
 	createVMCmd.Flags().String("iso", "debian-12.12.0-amd64-netinst.iso", "ISO media name")
 	createVMCmd.Flags().String("vm-name", "packer-test-vm", "Name for the VM")
 	createVMCmd.Flags().String("vapp", "", "vApp name (created if empty)")
@@ -94,15 +94,24 @@ func main() {
 	}
 }
 
+func getEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := viper.GetString(k); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func getDriver() (driver.Driver, error) {
-	host := viper.GetString("VCD_HOST")
-	username := viper.GetString("VCD_USERNAME")
-	password := viper.GetString("VCD_PASSWORD")
-	org := viper.GetString("VCD_ORG")
-	insecure := viper.GetString("VCD_VERIFY_SSL") == "false"
+	host := getEnv("VCD_HOST", "PKR_VAR_vcd_host")
+	username := getEnv("VCD_USERNAME", "PKR_VAR_vcd_username")
+	password := getEnv("VCD_PASSWORD", "PKR_VAR_vcd_password")
+	org := getEnv("VCD_ORG", "PKR_VAR_vcd_org")
+	insecure := getEnv("VCD_VERIFY_SSL") == "false" || getEnv("PKR_VAR_vcd_insecure") == "true"
 
 	if host == "" || username == "" || password == "" || org == "" {
-		return nil, fmt.Errorf("missing required environment variables: VCD_HOST, VCD_USERNAME, VCD_PASSWORD, VCD_ORG")
+		return nil, fmt.Errorf("missing required environment variables: VCD_HOST (or PKR_VAR_vcd_host), VCD_USERNAME, VCD_PASSWORD, VCD_ORG")
 	}
 
 	// Strip https:// prefix if present - driver adds it
@@ -144,16 +153,49 @@ func runUploadISO(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println("Connection successful!")
 
-	// Create temporary catalog
-	tempCatalogName := fmt.Sprintf("packer-iso-test-%d", time.Now().Unix())
-	fmt.Printf("\nCreating temporary catalog: %s...\n", tempCatalogName)
+	// Get VDC for storage profile
+	vdcName := getEnv("VCD_VDC", "PKR_VAR_vcd_vdc")
+	if vdcName == "" {
+		fmt.Println("Error: VCD_VDC (or PKR_VAR_vcd_vdc) environment variable is required")
+		os.Exit(1)
+	}
 
-	adminCatalog, err := d.CreateCatalog(tempCatalogName, "Temporary catalog for ISO upload test")
+	vdc, err := d.GetVdc(vdcName)
+	if err != nil {
+		fmt.Printf("Error getting VDC %s: %v\n", vdcName, err)
+		os.Exit(1)
+	}
+
+	// Get storage profile from VDC
+	var storageProfileRef *types.Reference
+	if vdc.Vdc.VdcStorageProfiles != nil && len(vdc.Vdc.VdcStorageProfiles.VdcStorageProfile) > 0 {
+		storageProfileRef = vdc.Vdc.VdcStorageProfiles.VdcStorageProfile[0]
+		fmt.Printf("Using VDC storage profile: %s\n", storageProfileRef.Name)
+	} else {
+		fmt.Println("Error: No storage profiles found in VDC")
+		os.Exit(1)
+	}
+
+	// Create temporary catalog with VDC storage profile
+	tempCatalogName := fmt.Sprintf("packer-iso-test-%d", time.Now().Unix())
+	fmt.Printf("\nCreating temporary catalog: %s (with storage profile: %s)...\n", tempCatalogName, storageProfileRef.Name)
+
+	adminCatalog, err := d.CreateCatalogWithStorageProfile(tempCatalogName, "Temporary catalog for ISO upload test", storageProfileRef)
 	if err != nil {
 		fmt.Printf("Error creating catalog: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Catalog created: %s\n", adminCatalog.AdminCatalog.Name)
+
+	// Verify storage profile
+	if adminCatalog.AdminCatalog.CatalogStorageProfiles != nil &&
+		len(adminCatalog.AdminCatalog.CatalogStorageProfiles.VdcStorageProfile) > 0 {
+		for _, sp := range adminCatalog.AdminCatalog.CatalogStorageProfiles.VdcStorageProfile {
+			fmt.Printf("  Catalog storage profile: %s\n", sp.Name)
+		}
+	} else {
+		fmt.Println("  Warning: No storage profiles set on catalog")
+	}
 
 	// Get regular catalog reference for upload
 	catalog, err := d.GetCatalog(tempCatalogName)

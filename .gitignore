@@ -3,6 +3,9 @@ packer-plugin-vcd
 packer-plugin-vcd_SHA256SUM
 packer-plugin-scaffolding
 main
+vcdtest
+create-test-vm
+cmd/diag/
 
 # Environment
 .env
@@ -21,6 +24,7 @@ docs.zip
 # Test artifacts
 *.iso
 *.log
+*.bak
 
 # IDE
 .idea/
