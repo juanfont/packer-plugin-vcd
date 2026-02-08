@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -69,6 +70,7 @@ type Driver interface {
 type VCDDriver struct {
 	client  *govcd.VCDClient
 	orgName string
+	stopCh  chan struct{} // signals keepalive goroutine to stop
 }
 
 func NewVCDDriver(client *govcd.VCDClient, orgName string) Driver {
@@ -101,12 +103,38 @@ func NewDriver(config *ConnectConfig) (Driver, error) {
 	driver := &VCDDriver{
 		client:  govcdClient,
 		orgName: config.Org,
+		stopCh:  make(chan struct{}),
 	}
+	driver.startKeepalive()
 
 	return driver, nil
 }
 
+// startKeepalive runs a background goroutine that pings VCD every 10 minutes
+// to prevent the session from expiring during long operations (e.g. Windows
+// Update provisioning that can take 3+ hours with no VCD API calls).
+func (d *VCDDriver) startKeepalive() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-d.stopCh:
+				return
+			case <-ticker.C:
+				_, err := d.client.GetOrgByName(d.orgName)
+				if err != nil {
+					log.Printf("[WARN] VCD keepalive ping failed: %v", err)
+				}
+			}
+		}
+	}()
+}
+
 func (d *VCDDriver) Cleanup() error {
+	if d.stopCh != nil {
+		close(d.stopCh)
+	}
 	if d.client != nil {
 		return d.client.Disconnect()
 	}
@@ -554,8 +582,8 @@ func newClient(apiURL url.URL, org string, username string, password string, tok
 						Timeout:   30 * time.Second,
 						KeepAlive: 30 * time.Second,
 					}).DialContext,
-					MaxIdleConns:        100,
-					IdleConnTimeout:     0, // No idle timeout - keep connections alive
+					MaxIdleConns:          100,
+					IdleConnTimeout:       0, // No idle timeout - keep connections alive
 					ExpectContinueTimeout: 10 * time.Second,
 				},
 				Timeout: 0, // No timeout - uploads can take a long time
