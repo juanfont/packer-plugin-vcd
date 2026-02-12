@@ -36,6 +36,10 @@ type HardwareConfig struct {
 	// giving time for the "Press any key to boot from CD" prompt to appear.
 	// Useful for EFI boot with Windows ISOs. Defaults to 0 (no delay).
 	BootDelay int `mapstructure:"boot_delay"`
+	// VM sizing policy name. If specified, the VM will use this compute policy
+	// instead of manual CPU and memory configuration. Mutually exclusive with
+	// CPUs and memory settings.
+	VMSizingPolicy string `mapstructure:"vm_sizing_policy"`
 }
 
 func (c *HardwareConfig) Prepare() []error {
@@ -47,6 +51,18 @@ func (c *HardwareConfig) Prepare() []error {
 
 	if c.VTPMEnabled && c.Firmware != "efi" && c.Firmware != "efi-secure" {
 		errs = append(errs, fmt.Errorf("'vTPM' could be enabled only when 'firmware' set to 'efi' or 'efi-secure'"))
+	}
+
+	// Validate sizing policy vs manual CPU/memory configuration
+	hasSizingPolicy := c.VMSizingPolicy != ""
+	hasManualSize := c.CPUs > 0 || c.Memory > 0
+
+	if hasSizingPolicy && hasManualSize {
+		errs = append(errs, fmt.Errorf("cannot specify both 'vm_sizing_policy' and 'CPUs'/'memory'"))
+	}
+
+	if !hasSizingPolicy && !hasManualSize {
+		errs = append(errs, fmt.Errorf("must specify either 'vm_sizing_policy' or both 'CPUs' and 'memory'"))
 	}
 
 	return errs

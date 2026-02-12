@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/vmware/go-vcloud-director/v3/govcd"
 	"github.com/vmware/go-vcloud-director/v3/types/v56"
 )
+
+var errPolicyNotFound = errors.New("VM sizing policy not found")
 
 // VirtualMachine defines the interface for VM operations
 type VirtualMachine interface {
@@ -360,4 +363,16 @@ func (v *VirtualMachineDriver) GetVM() *govcd.VM {
 
 func (v *VirtualMachineDriver) Refresh() error {
 	return v.vm.Refresh()
+}
+
+// --- Compute Policy Operations ---
+
+// GetVMSizingPolicyByName finds a VM sizing policy by name from a list of policies
+func GetVMSizingPolicyByName(sizingPolicies []*govcd.VdcComputePolicyV2, policyName string) (*govcd.VdcComputePolicyV2, error) {
+	for _, policy := range sizingPolicies {
+		if policy.VdcComputePolicyV2.Name == policyName {
+			return policy, nil
+		}
+	}
+	return nil, errPolicyNotFound
 }

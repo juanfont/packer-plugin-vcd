@@ -64,6 +64,7 @@ type FlatConfig struct {
 	ForceBIOSSetup            *bool                             `mapstructure:"force_bios_setup" cty:"force_bios_setup" hcl:"force_bios_setup"`
 	VTPMEnabled               *bool                             `mapstructure:"vTPM" cty:"vTPM" hcl:"vTPM"`
 	BootDelay                 *int                              `mapstructure:"boot_delay" cty:"boot_delay" hcl:"boot_delay"`
+	VMSizingPolicy            *string                           `mapstructure:"vm_sizing_policy" cty:"vm_sizing_policy" hcl:"vm_sizing_policy"`
 	ISOChecksum               *string                           `mapstructure:"iso_checksum" required:"true" cty:"iso_checksum" hcl:"iso_checksum"`
 	RawSingleISOUrl           *string                           `mapstructure:"iso_url" required:"true" cty:"iso_url" hcl:"iso_url"`
 	ISOUrls                   []string                          `mapstructure:"iso_urls" cty:"iso_urls" hcl:"iso_urls"`
@@ -198,6 +199,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"force_bios_setup":             &hcldec.AttrSpec{Name: "force_bios_setup", Type: cty.Bool, Required: false},
 		"vTPM":                         &hcldec.AttrSpec{Name: "vTPM", Type: cty.Bool, Required: false},
 		"boot_delay":                   &hcldec.AttrSpec{Name: "boot_delay", Type: cty.Number, Required: false},
+		"vm_sizing_policy":             &hcldec.AttrSpec{Name: "vm_sizing_policy", Type: cty.String, Required: false},
 		"iso_checksum":                 &hcldec.AttrSpec{Name: "iso_checksum", Type: cty.String, Required: false},
 		"iso_url":                      &hcldec.AttrSpec{Name: "iso_url", Type: cty.String, Required: false},
 		"iso_urls":                     &hcldec.AttrSpec{Name: "iso_urls", Type: cty.List(cty.String), Required: false},

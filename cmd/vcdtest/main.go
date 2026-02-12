@@ -58,6 +58,12 @@ var debugIPCmd = &cobra.Command{
 	Run:   runDebugIP,
 }
 
+var listSizingPoliciesCmd = &cobra.Command{
+	Use:   "list-sizing-policies",
+	Short: "List available VM sizing policies in the VDC",
+	Run:   runListSizingPolicies,
+}
+
 func init() {
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()
@@ -73,6 +79,8 @@ func init() {
 	rootCmd.AddCommand(fullTestCmd)
 	rootCmd.AddCommand(consoleTestCmd)
 	rootCmd.AddCommand(debugIPCmd)
+	rootCmd.AddCommand(listSizingPoliciesCmd)
+	rootCmd.AddCommand(cleanupCmd)
 
 	// Flags for console-test
 	consoleTestCmd.Flags().String("text", "hello", "Text to type via console")
@@ -917,4 +925,47 @@ func runDebugIP(cmd *cobra.Command, args []string) {
 	} else {
 		fmt.Printf("Discovered available IP: %s\n", networkInfo.AvailableIP)
 	}
+}
+
+func runListSizingPolicies(cmd *cobra.Command, args []string) {
+	vdcName := viper.GetString("VCD_VDC")
+
+	d, err := getDriver()
+	if err != nil {
+		fmt.Printf("Connection failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Connection successful!")
+
+	vdc, err := d.GetVdc(vdcName)
+	if err != nil {
+		fmt.Printf("Error getting VDC: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("VDC: %s\n\n", vdc.Vdc.Name)
+
+	client := d.GetClient()
+
+	// Get all assigned sizing policies
+	policies, err := client.GetAllAssignedVdcComputePoliciesV2(vdc.Vdc.ID, nil)
+	if err != nil {
+		fmt.Printf("Error getting sizing policies: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(policies) == 0 {
+		fmt.Println("No VM sizing policies assigned to this VDC")
+		return
+	}
+
+	fmt.Printf("Available VM Sizing Policies (%d):\n\n", len(policies))
+	for _, policy := range policies {
+		fmt.Printf("  - %s\n", policy.VdcComputePolicyV2.Name)
+		if policy.VdcComputePolicyV2.Description != nil && *policy.VdcComputePolicyV2.Description != "" {
+			fmt.Printf("      Description: %s\n", *policy.VdcComputePolicyV2.Description)
+		}
+	}
+
+	fmt.Printf("\nUsage in template:\n")
+	fmt.Printf("  vm_sizing_policy = \"%s\"\n", policies[0].VdcComputePolicyV2.Name)
 }
