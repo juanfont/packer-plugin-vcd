@@ -40,7 +40,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	defer d.Cleanup()
-	fmt.Println("Connection successful!\n")
+	fmt.Println("Connection successful!")
 
 	hasErrors := false
 
