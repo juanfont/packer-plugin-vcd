@@ -3,7 +3,7 @@ packer-plugin-vcd
 packer-plugin-vcd_SHA256SUM
 packer-plugin-scaffolding
 main
-vcdtest
+cmd/vcdtest/vcdtest
 create-test-vm
 cmd/diag/
 
