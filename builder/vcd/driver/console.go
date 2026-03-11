@@ -3,6 +3,7 @@ package driver
 import (
 	"encoding/xml"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -43,6 +44,8 @@ func AcquireMksTicket(client *govcd.VCDClient, vm *govcd.VM) (*MksTicket, error)
 // acquireMksTicketFromURL makes the actual API call to acquire an MKS ticket
 // Uses govcd's ExecuteRequest for proper request/response handling
 func acquireMksTicketFromURL(client *govcd.Client, ticketURL string) (*MksTicket, error) {
+	log.Printf("[DEBUG] Acquiring MKS ticket from URL: %s", ticketURL)
+
 	ticket := &MksTicket{
 		Xmlns: types.XMLNamespaceVCloud,
 	}
@@ -56,8 +59,12 @@ func acquireMksTicketFromURL(client *govcd.Client, ticketURL string) (*MksTicket
 		ticket,
 	)
 	if err != nil {
+		log.Printf("[ERROR] Failed to acquire MKS ticket: %v", err)
 		return nil, err
 	}
+
+	log.Printf("[DEBUG] MKS ticket acquired successfully (host=%s, port=%d, ticket length=%d)",
+		ticket.Host, ticket.Port, len(ticket.Ticket))
 
 	return ticket, nil
 }

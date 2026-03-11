@@ -3,6 +3,7 @@ package driver
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -125,16 +126,20 @@ var VScanCodes = map[string]int{
 
 // WMKSClient provides console access to a VM via WebMKS protocol
 type WMKSClient struct {
-	conn         *websocket.Conn
-	ticket       *MksTicket
-	insecure     bool
-	connected    bool
-	keyDelay     time.Duration
-	groupDelay   time.Duration
-	specialDelay time.Duration
-	authToken    string // VCD authorization token
-	authHeader   string // VCD auth header name (x-vcloud-authorization or Authorization)
-	stopReader   chan struct{} // signals the background reader to stop
+	conn          *websocket.Conn
+	ticket        *MksTicket
+	insecure      bool
+	connected     bool
+	keyDelay      time.Duration
+	groupDelay    time.Duration
+	specialDelay  time.Duration
+	authToken     string // VCD authorization token
+	authHeader    string // VCD auth header name (x-vcloud-authorization or Authorization)
+	stopReader    chan struct{} // signals the background reader to stop
+	connectedAt   time.Time     // track connection start time
+	bytesWritten  int64         // track bytes sent
+	keysPressed   int           // track number of keys sent
+	lastWriteTime time.Time     // track last successful write
 }
 
 // WMKSOption configures the WMKS client
@@ -215,6 +220,8 @@ func (c *WMKSClient) Connect() error {
 	}
 
 	c.connected = true
+	c.connectedAt = time.Now()
+	log.Printf("[DEBUG] WMKS connection established at %s", c.connectedAt.Format(time.RFC3339))
 
 	// Start background reader to drain server messages (framebuffer updates, etc.)
 	// Without this, the server's TCP send buffer fills up and the connection breaks.
@@ -243,6 +250,13 @@ func (c *WMKSClient) Connect() error {
 				}
 				// For close errors, stop the reader
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					log.Printf("[DEBUG] WMKS connection closed normally after %s", time.Since(c.connectedAt))
+					return
+				}
+				// Check for unexpected close
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("[WARN] WMKS unexpected connection close after %s (keys=%d, bytes=%d): %v",
+						time.Since(c.connectedAt), c.keysPressed, c.bytesWritten, err)
 					return
 				}
 				// For other errors (timeouts), continue
@@ -375,7 +389,22 @@ func (c *WMKSClient) SendKeyEvent(scanCode int, down bool) error {
 	}
 	msg[7] = 0 // flags
 
-	return c.conn.WriteMessage(websocket.BinaryMessage, msg)
+	err := c.conn.WriteMessage(websocket.BinaryMessage, msg)
+	if err != nil {
+		elapsed := time.Since(c.connectedAt)
+		timeSinceLastWrite := time.Since(c.lastWriteTime)
+		log.Printf("[ERROR] WMKS write failed after %s (keys=%d, bytes=%d, time_since_last_write=%s): %v",
+			elapsed, c.keysPressed, c.bytesWritten, timeSinceLastWrite, err)
+		return err
+	}
+
+	c.bytesWritten += int64(len(msg))
+	c.lastWriteTime = time.Now()
+	if down {
+		c.keysPressed++
+	}
+
+	return nil
 }
 
 // SendKey sends a key press followed by release

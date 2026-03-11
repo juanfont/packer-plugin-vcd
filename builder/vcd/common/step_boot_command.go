@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/bootcommand"
@@ -184,6 +185,9 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 		state.Put("error", fmt.Errorf("error interpolating boot command: %w", err))
 		return multistep.ActionHalt
 	}
+
+	log.Printf("[DEBUG] Boot command interpolated (length=%d chars)", len(flatBootCommand))
+
 	seq, err := bootcommand.GenerateExpressionSequence(flatBootCommand)
 	if err != nil {
 		state.Put("error", fmt.Errorf("error parsing boot command: %w", err))
@@ -196,11 +200,18 @@ func (s *StepBootCommand) Run(ctx context.Context, state multistep.StateBag) mul
 		groupInterval = 0 // No delay between groups by default
 	}
 
+	log.Printf("[DEBUG] Starting boot command execution (elements in sequence)")
+	bootCommandStart := time.Now()
+
 	if err := seq.Do(ctx, bootDriver); err != nil {
+		elapsed := time.Since(bootCommandStart)
+		log.Printf("[ERROR] Boot command failed after %s: %v", elapsed, err)
 		state.Put("error", fmt.Errorf("error running boot command: %w", err))
 		return multistep.ActionHalt
 	}
 
+	elapsed := time.Since(bootCommandStart)
+	log.Printf("[DEBUG] Boot command completed successfully in %s", elapsed)
 	ui.Say("Boot command completed successfully")
 
 	return multistep.ActionContinue
