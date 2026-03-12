@@ -14,9 +14,17 @@ const (
 	// Message type marker for binary frames
 	msgTypeBinary = 127
 
-	// Subtypes for key events
-	msgVMWKeyEvent  = 0 // 8-byte key event
-	msgVMWKeyEvent2 = 6 // 10-byte key event with extended flags
+	// Subtypes for client messages
+	msgVMWKeyEvent    = 0 // 8-byte key event
+	msgVMWClientCaps  = 3 // Client capabilities
+	msgVMWKeyEvent2   = 6 // 10-byte key event with extended flags
+
+	// Subtypes for server messages
+	msgVMWServerCaps = 0 // Server capabilities
+	msgVMWHeartbeat  = 4 // Server heartbeat
+
+	// Client capability flags
+	clientCapHeartbeat = 256 // 0x0100
 )
 
 // VScanCodes are PS/2 scan codes used by WMKS
@@ -343,6 +351,22 @@ func (c *WMKSClient) rfbHandshake() error {
 	if err != nil {
 		return fmt.Errorf("failed to read ServerInit: %w", err)
 	}
+
+	// Step 8: Send VMware ClientCaps to enable heartbeat
+	// Message format: [127, 3, length_hi, length_lo, caps_byte3, caps_byte2, caps_byte1, caps_byte0]
+	// clientCapHeartbeat = 256 (0x00000100)
+	clientCaps := []byte{
+		127,  // msgVMWClientMessage
+		3,    // msgVMWClientCaps subtype
+		0, 8, // message length (8 bytes total) as big-endian uint16
+		0, 0, 1, 0, // capabilities: 256 (clientCapHeartbeat) as big-endian uint32
+	}
+	err = c.conn.WriteMessage(websocket.BinaryMessage, clientCaps)
+	if err != nil {
+		return fmt.Errorf("failed to send ClientCaps: %w", err)
+	}
+
+	log.Printf("[DEBUG] WMKS sent ClientCaps with heartbeat support (cap=256)")
 
 	return nil
 }
