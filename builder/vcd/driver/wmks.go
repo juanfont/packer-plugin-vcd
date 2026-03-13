@@ -249,7 +249,7 @@ func (c *WMKSClient) Connect() error {
 			}
 			// Use a short read deadline so we can check stopReader periodically
 			c.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-			_, _, err := c.conn.ReadMessage()
+			msgType, data, err := c.conn.ReadMessage()
 			if err != nil {
 				select {
 				case <-c.stopReader:
@@ -268,6 +268,11 @@ func (c *WMKSClient) Connect() error {
 					return
 				}
 				// For other errors (timeouts), continue
+			} else if msgType == websocket.BinaryMessage && len(data) >= 2 {
+				// Parse VMware server messages (type 127)
+				if data[0] == msgTypeBinary {
+					c.handleServerMessage(data)
+				}
 			}
 		}
 	}()
@@ -352,23 +357,63 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to read ServerInit: %w", err)
 	}
 
-	// Step 8: Send VMware ClientCaps to enable heartbeat
-	// Message format: [127, 3, length_hi, length_lo, caps_byte3, caps_byte2, caps_byte1, caps_byte0]
-	// clientCapHeartbeat = 256 (0x00000100)
+	// Note: After ServerInit, the server will send ServerCaps message (type 127, subtype 0)
+	// which the background reader will handle and respond to with ClientCaps.
+
+	return nil
+}
+
+// handleServerMessage parses and handles VMware server messages (type 127)
+func (c *WMKSClient) handleServerMessage(data []byte) {
+	if len(data) < 4 {
+		return // Invalid message
+	}
+
+	subtype := data[1]
+
+	switch subtype {
+	case msgVMWServerCaps:
+		// ServerCaps message format: [127, 0, length_hi, length_lo, caps_bytes...]
+		// Parse server capabilities and respond with ClientCaps
+		if len(data) >= 8 {
+			// Extract server caps (32-bit big-endian at offset 4)
+			serverCaps := uint32(data[4])<<24 | uint32(data[5])<<16 | uint32(data[6])<<8 | uint32(data[7])
+
+			log.Printf("[DEBUG] WMKS received ServerCaps: 0x%08x", serverCaps)
+
+			// Check if server supports heartbeat (bit 65536 = 0x10000)
+			const serverCapHeartbeat = 0x10000
+			if serverCaps&serverCapHeartbeat != 0 {
+				log.Printf("[DEBUG] Server supports heartbeat, sending ClientCaps")
+				c.sendClientCaps()
+			}
+		}
+
+	case msgVMWHeartbeat:
+		// Heartbeat message - just log it
+		if len(data) >= 6 {
+			value := uint16(data[4])<<8 | uint16(data[5])
+			log.Printf("[DEBUG] WMKS received heartbeat: %d (elapsed=%s)", value, time.Since(c.connectedAt))
+		}
+	}
+}
+
+// sendClientCaps sends the VMware ClientCaps message advertising heartbeat support
+func (c *WMKSClient) sendClientCaps() {
 	clientCaps := []byte{
 		127,  // msgVMWClientMessage
 		3,    // msgVMWClientCaps subtype
 		0, 8, // message length (8 bytes total) as big-endian uint16
 		0, 0, 1, 0, // capabilities: 256 (clientCapHeartbeat) as big-endian uint32
 	}
-	err = c.conn.WriteMessage(websocket.BinaryMessage, clientCaps)
+
+	err := c.conn.WriteMessage(websocket.BinaryMessage, clientCaps)
 	if err != nil {
-		return fmt.Errorf("failed to send ClientCaps: %w", err)
+		log.Printf("[WARN] Failed to send ClientCaps: %v", err)
+		return
 	}
 
 	log.Printf("[DEBUG] WMKS sent ClientCaps with heartbeat support (cap=256)")
-
-	return nil
 }
 
 // Close closes the WebSocket connection
