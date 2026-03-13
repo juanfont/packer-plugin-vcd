@@ -5,7 +5,11 @@ import "fmt"
 type HardwareConfig struct {
 	// The number of virtual CPUs cores for the virtual machine.
 	CPUs int32 `mapstructure:"CPUs"`
-	// Cores per socket for the virtual machine.
+	// The number of cores per CPU socket. This controls the CPU topology
+	// (sockets × cores_per_socket = total CPUs). For example, if CPUs is 8
+	// and cores_per_socket is 4, the VM will have 2 sockets with 4 cores each.
+	// Some software licenses are based on socket count rather than core count.
+	// If not specified, VCD uses its default topology (typically 1 socket).
 	CoresPerSocket int32 `mapstructure:"cores_per_socket"`
 	// Enable CPU hot plug setting for virtual machine. Defaults to `false`
 	CpuHotAddEnabled bool `mapstructure:"CPU_hot_plug"`
