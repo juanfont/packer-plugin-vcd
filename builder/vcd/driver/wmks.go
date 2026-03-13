@@ -268,10 +268,23 @@ func (c *WMKSClient) Connect() error {
 					return
 				}
 				// For other errors (timeouts), continue
-			} else if msgType == websocket.BinaryMessage && len(data) >= 2 {
-				// Parse VMware server messages (type 127)
-				if data[0] == msgTypeBinary {
+			} else if msgType == websocket.BinaryMessage && len(data) > 0 {
+				// Log all server messages to understand the protocol
+				if len(data) >= 2 && data[0] == msgTypeBinary {
+					logLen := len(data)
+					if logLen > 20 {
+						logLen = 20
+					}
+					log.Printf("[DEBUG] WMKS server message: type=%d subtype=%d len=%d data=%v",
+						data[0], data[1], len(data), data[:logLen])
 					c.handleServerMessage(data)
+				} else if len(data) > 0 {
+					logLen := len(data)
+					if logLen > 20 {
+						logLen = 20
+					}
+					log.Printf("[DEBUG] WMKS non-VMW message: type=%d len=%d first_bytes=%v",
+						msgType, len(data), data[:logLen])
 				}
 			}
 		}
