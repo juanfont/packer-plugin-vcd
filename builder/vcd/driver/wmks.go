@@ -343,20 +343,17 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to send security type: %w", err)
 	}
 
-	// Step 5: If security type != 1 (None), handle authentication
-	// For VCD console with ticket auth, it usually accepts None
-	if selectedType != 1 {
-		// Read security result
-		_, secResult, err := c.conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("failed to read security result: %w", err)
-		}
-		if len(secResult) >= 4 && (secResult[0] != 0 || secResult[1] != 0 || secResult[2] != 0 || secResult[3] != 0) {
-			return fmt.Errorf("security authentication failed")
+	// Step 5: Read SecurityResult (RFB 3.8 sends this even for type 1/None)
+	_, secResult, err := c.conn.ReadMessage()
+	if err != nil {
+		return fmt.Errorf("failed to read security result: %w", err)
+	}
+	if len(secResult) >= 4 {
+		result := uint32(secResult[0])<<24 | uint32(secResult[1])<<16 | uint32(secResult[2])<<8 | uint32(secResult[3])
+		if result != 0 {
+			return fmt.Errorf("security authentication failed (result=%d)", result)
 		}
 	}
-
-	// For RFB 3.8 with security type 1, there's no security result
 
 	// Step 6: Send ClientInit (1 = shared session)
 	err = c.conn.WriteMessage(websocket.BinaryMessage, []byte{1})
@@ -389,15 +386,31 @@ func (c *WMKSClient) rfbHandshake() error {
 	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d (parsed from bytes [%d %d %d %d])",
 		fbWidth, fbHeight, serverInit[0], serverInit[1], serverInit[2], serverInit[3])
 
-	// Step 8: Send SetEncodings to advertise VMware ServerCaps support
-	// The server only sends ServerCaps if we advertise we support it.
-	// Message format: [type, padding, count_hi, count_lo, encoding1, encoding2, ...]
-	// We need to include encVMWServerCaps (1464686202) so server sends ServerCaps
-	encodings := []byte{
-		2,    // msgClientEncodings (SetEncodings)
-		0,    // padding
-		0, 1, // count = 1 encoding (big-endian)
-		0x57, 0x4D, 0x56, 0x3A, // encVMWServerCaps = 1464686202 (big-endian)
+	// Step 8: Send SetEncodings to advertise supported encodings
+	// Must include at least one image encoding (TightPNG) so the server can
+	// respond to FBUpdateRequests. Must include ServerCaps to trigger the
+	// heartbeat negotiation. Mirrors wmks.js _sendClientEncodingsMsg().
+	encList := []uint32{
+		1,          // encCopyRect
+		0xFFFFFEFC, // encTightPNG = -260 (as uint32)
+		0xFFFFFF21, // encDesktopSize = -223 (as uint32)
+		1464686203, // encVMWServerPush2
+		1464686202, // encVMWServerCaps
+		0xFFFFFFE9, // encTightJpegQuality10 = -23 (as uint32)
+		1464686204, // encVMWFrameStamp
+	}
+	numEnc := len(encList)
+	encodings := make([]byte, 4+numEnc*4)
+	encodings[0] = 2 // msgClientEncodings (SetEncodings)
+	encodings[1] = 0 // padding
+	encodings[2] = byte(numEnc >> 8)
+	encodings[3] = byte(numEnc)
+	for i, enc := range encList {
+		off := 4 + i*4
+		encodings[off] = byte(enc >> 24)
+		encodings[off+1] = byte(enc >> 16)
+		encodings[off+2] = byte(enc >> 8)
+		encodings[off+3] = byte(enc)
 	}
 
 	err = c.conn.WriteMessage(websocket.BinaryMessage, encodings)
@@ -405,7 +418,7 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to send SetEncodings: %w", err)
 	}
 
-	log.Printf("[DEBUG] WMKS sent SetEncodings (VMware ServerCaps support)")
+	log.Printf("[DEBUG] WMKS sent SetEncodings (%d encodings including TightPNG + ServerCaps)", numEnc)
 
 	// Step 9: Send FramebufferUpdateRequest (required by RFB protocol)
 	// Without this, the VNC server will timeout and close the connection.
