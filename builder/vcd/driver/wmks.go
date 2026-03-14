@@ -364,14 +364,41 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to send ClientInit: %w", err)
 	}
 
-	// Step 7: Read ServerInit (we don't need the details, just consume it)
-	_, _, err = c.conn.ReadMessage()
+	// Step 7: Read ServerInit to get framebuffer dimensions
+	_, serverInit, err := c.conn.ReadMessage()
 	if err != nil {
 		return fmt.Errorf("failed to read ServerInit: %w", err)
 	}
 
-	// Note: After ServerInit, the server will send ServerCaps message (type 127, subtype 0)
-	// which the background reader will handle and respond to with ClientCaps.
+	// Extract framebuffer width and height from ServerInit
+	// ServerInit format: width(2) height(2) pixel_format(16) name_length(4) name(...)
+	fbWidth := uint16(0)
+	fbHeight := uint16(0)
+	if len(serverInit) >= 4 {
+		fbWidth = uint16(serverInit[0])<<8 | uint16(serverInit[1])
+		fbHeight = uint16(serverInit[2])<<8 | uint16(serverInit[3])
+	}
+
+	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d", fbWidth, fbHeight)
+
+	// Step 8: Send FramebufferUpdateRequest (required by RFB protocol)
+	// Without this, the VNC server will timeout and close the connection.
+	// Message format: [type, incremental, x_hi, x_lo, y_hi, y_lo, w_hi, w_lo, h_hi, h_lo]
+	fbUpdateReq := []byte{
+		3,                        // msgFBUpdateRequest
+		0,                        // incremental=0 (full update)
+		0, 0,                     // x position (big-endian)
+		0, 0,                     // y position (big-endian)
+		byte(fbWidth >> 8), byte(fbWidth),   // width (big-endian)
+		byte(fbHeight >> 8), byte(fbHeight), // height (big-endian)
+	}
+
+	err = c.conn.WriteMessage(websocket.BinaryMessage, fbUpdateReq)
+	if err != nil {
+		return fmt.Errorf("failed to send FramebufferUpdateRequest: %w", err)
+	}
+
+	log.Printf("[DEBUG] WMKS sent FramebufferUpdateRequest (%dx%d)", fbWidth, fbHeight)
 
 	return nil
 }
