@@ -381,7 +381,25 @@ func (c *WMKSClient) rfbHandshake() error {
 
 	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d", fbWidth, fbHeight)
 
-	// Step 8: Send FramebufferUpdateRequest (required by RFB protocol)
+	// Step 8: Send SetEncodings to advertise VMware ServerCaps support
+	// The server only sends ServerCaps if we advertise we support it.
+	// Message format: [type, padding, count_hi, count_lo, encoding1, encoding2, ...]
+	// We need to include encVMWServerCaps (1464686202) so server sends ServerCaps
+	encodings := []byte{
+		2,    // msgClientEncodings (SetEncodings)
+		0,    // padding
+		0, 1, // count = 1 encoding (big-endian)
+		0x57, 0x4D, 0x56, 0x3A, // encVMWServerCaps = 1464686202 (big-endian)
+	}
+
+	err = c.conn.WriteMessage(websocket.BinaryMessage, encodings)
+	if err != nil {
+		return fmt.Errorf("failed to send SetEncodings: %w", err)
+	}
+
+	log.Printf("[DEBUG] WMKS sent SetEncodings (VMware ServerCaps support)")
+
+	// Step 9: Send FramebufferUpdateRequest (required by RFB protocol)
 	// Without this, the VNC server will timeout and close the connection.
 	// Message format: [type, incremental, x_hi, x_lo, y_hi, y_lo, w_hi, w_lo, h_hi, h_lo]
 	fbUpdateReq := []byte{
