@@ -370,6 +370,13 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to read ServerInit: %w", err)
 	}
 
+	// Log raw ServerInit for debugging
+	logLen := len(serverInit)
+	if logLen > 40 {
+		logLen = 40
+	}
+	log.Printf("[DEBUG] WMKS ServerInit: len=%d bytes=%v", len(serverInit), serverInit[:logLen])
+
 	// Extract framebuffer width and height from ServerInit
 	// ServerInit format: width(2) height(2) pixel_format(16) name_length(4) name(...)
 	fbWidth := uint16(0)
@@ -379,7 +386,8 @@ func (c *WMKSClient) rfbHandshake() error {
 		fbHeight = uint16(serverInit[2])<<8 | uint16(serverInit[3])
 	}
 
-	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d", fbWidth, fbHeight)
+	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d (parsed from bytes [%d %d %d %d])",
+		fbWidth, fbHeight, serverInit[0], serverInit[1], serverInit[2], serverInit[3])
 
 	// Step 8: Send SetEncodings to advertise VMware ServerCaps support
 	// The server only sends ServerCaps if we advertise we support it.
