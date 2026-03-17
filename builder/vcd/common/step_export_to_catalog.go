@@ -42,6 +42,13 @@ type ExportToCatalogConfig struct {
 	// If true, create the catalog if it doesn't exist.
 	// Defaults to false.
 	CreateCatalog bool `mapstructure:"create_catalog"`
+
+	// Controls whether the sizing policy on the captured template is final
+	// (locked). When false, the template can be instantiated in VDCs that
+	// don't have the same sizing policy — the destination tenant can change
+	// or remove the policy. When true (or unset), VCD's default behavior
+	// applies (policies are final). Defaults to true.
+	SizingPolicyFinal *bool `mapstructure:"sizing_policy_final"`
 }
 
 func (c *ExportToCatalogConfig) Prepare(lc *LocationConfig) []error {
@@ -243,6 +250,16 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		}
 	} else {
 		ui.Say("vApp template is ready")
+	}
+
+	// Make compute policies non-final if requested
+	if s.Config.SizingPolicyFinal != nil && !*s.Config.SizingPolicyFinal {
+		ui.Say("Making compute policies non-final on template...")
+		if err := d.MakeTemplatePoliciesNonFinal(capturedTemplate); err != nil {
+			state.Put("error", fmt.Errorf("error making policies non-final: %w", err))
+			return multistep.ActionHalt
+		}
+		ui.Say("Compute policies are now non-final (template is portable)")
 	}
 
 	ui.Sayf("vApp template '%s' created successfully in catalog '%s'", s.Config.TemplateName, s.Config.Catalog)

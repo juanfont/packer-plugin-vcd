@@ -4,10 +4,12 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/vmware/go-vcloud-director/v3/govcd"
@@ -61,6 +63,9 @@ type Driver interface {
 	CreateCatalogWithStorageProfile(name, description string, storageProfileRef *types.Reference) (*govcd.AdminCatalog, error)
 	DeleteCatalog(catalog *govcd.AdminCatalog) error
 	UploadMediaImage(catalog *govcd.Catalog, name, description, filePath string) (*govcd.Media, error)
+
+	// Template operations
+	MakeTemplatePoliciesNonFinal(template *govcd.VAppTemplate) error
 
 	// Lifecycle
 	Cleanup() error
@@ -562,6 +567,91 @@ func (d *VCDDriver) uploadMediaOnce(catalog *govcd.Catalog, name, description, f
 	}
 
 	return nil, fmt.Errorf("media %s never reached RESOLVED status after upload (current: %d)", name, media.Media.Status)
+}
+
+// --- Template Operations ---
+
+// MakeTemplatePoliciesNonFinal fetches the raw XML of a vApp template,
+// sets VmSizingPolicyFinal and VmPlacementPolicyFinal to false via string
+// replacement, and PUTs the modified XML back. This avoids Go struct marshaling
+// issues with VCD's strict XML element ordering for template child VMs.
+func (d *VCDDriver) MakeTemplatePoliciesNonFinal(template *govcd.VAppTemplate) error {
+	client := &d.client.Client
+
+	templateURL, err := url.ParseRequestURI(template.VAppTemplate.HREF)
+	if err != nil {
+		return fmt.Errorf("error parsing template HREF: %w", err)
+	}
+
+	// GET full template XML
+	getReq := client.NewRequest(nil, http.MethodGet, *templateURL, nil)
+	getResp, err := client.Http.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("error fetching template XML: %w", err)
+	}
+	defer getResp.Body.Close()
+
+	if getResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d fetching template XML", getResp.StatusCode)
+	}
+
+	body, err := io.ReadAll(getResp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading template body: %w", err)
+	}
+
+	// Replace existing Final=true flags with false
+	xmlStr := string(body)
+	modified := strings.ReplaceAll(xmlStr,
+		"<VmSizingPolicyFinal>true</VmSizingPolicyFinal>",
+		"<VmSizingPolicyFinal>false</VmSizingPolicyFinal>")
+	modified = strings.ReplaceAll(modified,
+		"<VmPlacementPolicyFinal>true</VmPlacementPolicyFinal>",
+		"<VmPlacementPolicyFinal>false</VmPlacementPolicyFinal>")
+
+	// If Final elements are absent but the policy exists, inject them as false
+	if !strings.Contains(modified, "<VmSizingPolicyFinal>") && strings.Contains(modified, "<VmSizingPolicy ") {
+		modified = strings.ReplaceAll(modified,
+			"</ComputePolicy>",
+			"<VmSizingPolicyFinal>false</VmSizingPolicyFinal></ComputePolicy>")
+	}
+	if !strings.Contains(modified, "<VmPlacementPolicyFinal>") && strings.Contains(modified, "<VmPlacementPolicy ") {
+		modified = strings.ReplaceAll(modified,
+			"</ComputePolicy>",
+			"<VmPlacementPolicyFinal>false</VmPlacementPolicyFinal></ComputePolicy>")
+	}
+
+	if modified == xmlStr {
+		log.Printf("[INFO] Compute policies already non-final, skipping update")
+		return nil
+	}
+
+	// PUT modified XML back
+	putReq := client.NewRequest(nil, http.MethodPut, *templateURL, strings.NewReader(modified))
+	putReq.Header.Set("Content-Type", types.MimeVAppTemplate)
+
+	putResp, err := client.Http.Do(putReq)
+	if err != nil {
+		return fmt.Errorf("error putting modified template: %w", err)
+	}
+	defer putResp.Body.Close()
+
+	if putResp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(putResp.Body)
+		return fmt.Errorf("unexpected status %d putting template: %s", putResp.StatusCode, string(respBody))
+	}
+
+	// Decode and wait for the task
+	task := govcd.NewTask(client)
+	if err = xml.NewDecoder(putResp.Body).Decode(task.Task); err != nil {
+		return fmt.Errorf("error decoding task response: %w", err)
+	}
+
+	if err = task.WaitTaskCompletion(); err != nil {
+		return fmt.Errorf("error waiting for template policy update: %w", err)
+	}
+
+	return nil
 }
 
 // --- Internal helpers ---

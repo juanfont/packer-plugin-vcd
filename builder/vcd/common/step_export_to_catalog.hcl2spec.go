@@ -10,11 +10,12 @@ import (
 // FlatExportToCatalogConfig is an auto-generated flat version of ExportToCatalogConfig.
 // Where the contents of a field with a `mapstructure:,squash` tag are bubbled up.
 type FlatExportToCatalogConfig struct {
-	Catalog       *string `mapstructure:"catalog" cty:"catalog" hcl:"catalog"`
-	TemplateName  *string `mapstructure:"template_name" cty:"template_name" hcl:"template_name"`
-	Description   *string `mapstructure:"description" cty:"description" hcl:"description"`
-	Overwrite     *bool   `mapstructure:"overwrite" cty:"overwrite" hcl:"overwrite"`
-	CreateCatalog *bool   `mapstructure:"create_catalog" cty:"create_catalog" hcl:"create_catalog"`
+	Catalog           *string `mapstructure:"catalog" cty:"catalog" hcl:"catalog"`
+	TemplateName      *string `mapstructure:"template_name" cty:"template_name" hcl:"template_name"`
+	Description       *string `mapstructure:"description" cty:"description" hcl:"description"`
+	Overwrite         *bool   `mapstructure:"overwrite" cty:"overwrite" hcl:"overwrite"`
+	CreateCatalog     *bool   `mapstructure:"create_catalog" cty:"create_catalog" hcl:"create_catalog"`
+	SizingPolicyFinal *bool   `mapstructure:"sizing_policy_final" cty:"sizing_policy_final" hcl:"sizing_policy_final"`
 }
 
 // FlatMapstructure returns a new FlatExportToCatalogConfig.
@@ -29,11 +30,12 @@ func (*ExportToCatalogConfig) FlatMapstructure() interface{ HCL2Spec() map[strin
 // The decoded values from this spec will then be applied to a FlatExportToCatalogConfig.
 func (*FlatExportToCatalogConfig) HCL2Spec() map[string]hcldec.Spec {
 	s := map[string]hcldec.Spec{
-		"catalog":        &hcldec.AttrSpec{Name: "catalog", Type: cty.String, Required: false},
-		"template_name":  &hcldec.AttrSpec{Name: "template_name", Type: cty.String, Required: false},
-		"description":    &hcldec.AttrSpec{Name: "description", Type: cty.String, Required: false},
-		"overwrite":      &hcldec.AttrSpec{Name: "overwrite", Type: cty.Bool, Required: false},
-		"create_catalog": &hcldec.AttrSpec{Name: "create_catalog", Type: cty.Bool, Required: false},
+		"catalog":             &hcldec.AttrSpec{Name: "catalog", Type: cty.String, Required: false},
+		"template_name":       &hcldec.AttrSpec{Name: "template_name", Type: cty.String, Required: false},
+		"description":         &hcldec.AttrSpec{Name: "description", Type: cty.String, Required: false},
+		"overwrite":           &hcldec.AttrSpec{Name: "overwrite", Type: cty.Bool, Required: false},
+		"create_catalog":      &hcldec.AttrSpec{Name: "create_catalog", Type: cty.Bool, Required: false},
+		"sizing_policy_final": &hcldec.AttrSpec{Name: "sizing_policy_final", Type: cty.Bool, Required: false},
 	}
 	return s
 }

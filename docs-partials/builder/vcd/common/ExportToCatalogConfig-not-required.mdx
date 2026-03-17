@@ -13,4 +13,10 @@
 - `create_catalog` (bool) - If true, create the catalog if it doesn't exist.
   Defaults to false.
 
+- `sizing_policy_final` (\*bool) - Controls whether the sizing policy on the captured template is final
+  (locked). When false, the template can be instantiated in VDCs that
+  don't have the same sizing policy — the destination tenant can change
+  or remove the policy. When true (or unset), VCD's default behavior
+  applies (policies are final). Defaults to true.
+
 <!-- End of code generated from the comments of the ExportToCatalogConfig struct in builder/vcd/common/step_export_to_catalog.go; -->
