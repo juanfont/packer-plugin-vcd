@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,6 +26,11 @@ const (
 
 	// Client capability flags
 	clientCapHeartbeat = 256 // 0x0100
+
+	// Server capability flags (from wmks.js)
+	serverCapClientCaps = 0x8     // Server supports receiving ClientCaps
+	serverCapUpdateAck  = 0x20    // Server expects frame update ACKs
+	serverCapHeartbeat  = 0x10000 // Server supports heartbeat
 )
 
 // VScanCodes are PS/2 scan codes used by WMKS
@@ -143,11 +149,24 @@ type WMKSClient struct {
 	specialDelay  time.Duration
 	authToken     string // VCD authorization token
 	authHeader    string // VCD auth header name (x-vcloud-authorization or Authorization)
-	stopReader    chan struct{} // signals the background reader to stop
+	stopReader    chan struct{} // signals the background reader/keepalive to stop
 	connectedAt   time.Time     // track connection start time
 	bytesWritten  int64         // track bytes sent
 	keysPressed   int           // track number of keys sent
 	lastWriteTime time.Time     // track last successful write
+
+	// Write mutex - gorilla/websocket doesn't support concurrent writers.
+	// Needed because reader goroutine sends ACKs/ClientCaps while main
+	// goroutine sends key events.
+	writeMu sync.Mutex
+
+	// Framebuffer dimensions from ServerInit, used for periodic FBUpdateRequests
+	fbWidth  uint16
+	fbHeight uint16
+
+	// Server capability tracking
+	useVMWAck bool   // Server expects frame update ACKs (serverCapUpdateAck)
+	ackCounter uint16 // Incrementing ACK sequence number
 }
 
 // WMKSOption configures the WMKS client
@@ -238,8 +257,7 @@ func (c *WMKSClient) Connect() error {
 	c.stopReader = make(chan struct{})
 	go func() {
 		defer func() {
-			// Recover from panic if connection is closed while reading
-			recover()
+			recover() // Recover from panic if connection is closed while reading
 		}()
 		for {
 			select {
@@ -247,7 +265,6 @@ func (c *WMKSClient) Connect() error {
 				return
 			default:
 			}
-			// Use a short read deadline so we can check stopReader periodically
 			c.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			msgType, data, err := c.conn.ReadMessage()
 			if err != nil {
@@ -256,36 +273,47 @@ func (c *WMKSClient) Connect() error {
 					return
 				default:
 				}
-				// For close errors, stop the reader
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 					log.Printf("[DEBUG] WMKS connection closed normally after %s", time.Since(c.connectedAt))
 					return
 				}
-				// Check for unexpected close
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					log.Printf("[WARN] WMKS unexpected connection close after %s (keys=%d, bytes=%d): %v",
 						time.Since(c.connectedAt), c.keysPressed, c.bytesWritten, err)
 					return
 				}
-				// For other errors (timeouts), continue
-			} else if msgType == websocket.BinaryMessage && len(data) > 0 {
-				// Log all server messages to understand the protocol
-				if len(data) >= 2 && data[0] == msgTypeBinary {
-					logLen := len(data)
-					if logLen > 20 {
-						logLen = 20
-					}
-					log.Printf("[DEBUG] WMKS server message: type=%d subtype=%d len=%d data=%v",
-						data[0], data[1], len(data), data[:logLen])
-					c.handleServerMessage(data)
-				} else if len(data) > 0 {
-					logLen := len(data)
-					if logLen > 20 {
-						logLen = 20
-					}
-					log.Printf("[DEBUG] WMKS non-VMW message: type=%d len=%d first_bytes=%v",
-						msgType, len(data), data[:logLen])
+				continue // timeout — keep polling
+			}
+			if msgType != websocket.BinaryMessage || len(data) == 0 {
+				continue
+			}
+
+			if len(data) >= 2 && data[0] == msgTypeBinary {
+				// VMware protocol message (type 127)
+				c.handleServerMessage(data)
+			} else if data[0] == 0 {
+				// FramebufferUpdate (RFB message type 0)
+				// Send ACK if server expects it, then request more updates
+				if c.useVMWAck {
+					c.sendAck()
 				}
+			}
+			// Other RFB messages (SetColourMapEntries=1, Bell=2, ServerCutText=3) are ignored
+		}
+	}()
+
+	// Start keepalive goroutine: send periodic FramebufferUpdateRequests to keep
+	// server-to-client data flowing. Without this, the VCD proxy detects an idle
+	// connection (no data from server) and closes it after ~30-36 seconds.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.stopReader:
+				return
+			case <-ticker.C:
+				c.sendFBUpdateRequest(true) // incremental update
 			}
 		}
 	}()
@@ -376,15 +404,13 @@ func (c *WMKSClient) rfbHandshake() error {
 
 	// Extract framebuffer width and height from ServerInit
 	// ServerInit format: width(2) height(2) pixel_format(16) name_length(4) name(...)
-	fbWidth := uint16(0)
-	fbHeight := uint16(0)
 	if len(serverInit) >= 4 {
-		fbWidth = uint16(serverInit[0])<<8 | uint16(serverInit[1])
-		fbHeight = uint16(serverInit[2])<<8 | uint16(serverInit[3])
+		c.fbWidth = uint16(serverInit[0])<<8 | uint16(serverInit[1])
+		c.fbHeight = uint16(serverInit[2])<<8 | uint16(serverInit[3])
 	}
 
 	log.Printf("[DEBUG] WMKS ServerInit: framebuffer %dx%d (parsed from bytes [%d %d %d %d])",
-		fbWidth, fbHeight, serverInit[0], serverInit[1], serverInit[2], serverInit[3])
+		c.fbWidth, c.fbHeight, serverInit[0], serverInit[1], serverInit[2], serverInit[3])
 
 	// Step 8: Send SetEncodings to advertise supported encodings
 	// Must include at least one image encoding (TightPNG) so the server can
@@ -422,14 +448,13 @@ func (c *WMKSClient) rfbHandshake() error {
 
 	// Step 9: Send FramebufferUpdateRequest (required by RFB protocol)
 	// Without this, the VNC server will timeout and close the connection.
-	// Message format: [type, incremental, x_hi, x_lo, y_hi, y_lo, w_hi, w_lo, h_hi, h_lo]
 	fbUpdateReq := []byte{
-		3,                        // msgFBUpdateRequest
-		0,                        // incremental=0 (full update)
-		0, 0,                     // x position (big-endian)
-		0, 0,                     // y position (big-endian)
-		byte(fbWidth >> 8), byte(fbWidth),   // width (big-endian)
-		byte(fbHeight >> 8), byte(fbHeight), // height (big-endian)
+		3,    // msgFBUpdateRequest
+		0,    // incremental=0 (full update)
+		0, 0, // x position
+		0, 0, // y position
+		byte(c.fbWidth >> 8), byte(c.fbWidth),
+		byte(c.fbHeight >> 8), byte(c.fbHeight),
 	}
 
 	err = c.conn.WriteMessage(websocket.BinaryMessage, fbUpdateReq)
@@ -437,7 +462,7 @@ func (c *WMKSClient) rfbHandshake() error {
 		return fmt.Errorf("failed to send FramebufferUpdateRequest: %w", err)
 	}
 
-	log.Printf("[DEBUG] WMKS sent FramebufferUpdateRequest (%dx%d)", fbWidth, fbHeight)
+	log.Printf("[DEBUG] WMKS sent FramebufferUpdateRequest (%dx%d)", c.fbWidth, c.fbHeight)
 
 	return nil
 }
@@ -445,54 +470,104 @@ func (c *WMKSClient) rfbHandshake() error {
 // handleServerMessage parses and handles VMware server messages (type 127)
 func (c *WMKSClient) handleServerMessage(data []byte) {
 	if len(data) < 4 {
-		return // Invalid message
+		return
 	}
 
 	subtype := data[1]
+	logLen := len(data)
+	if logLen > 20 {
+		logLen = 20
+	}
+	log.Printf("[DEBUG] WMKS server message: subtype=%d len=%d data=%v", subtype, len(data), data[:logLen])
 
 	switch subtype {
 	case msgVMWServerCaps:
-		// ServerCaps message format: [127, 0, length_hi, length_lo, caps_bytes...]
-		// Parse server capabilities and respond with ClientCaps
-		if len(data) >= 8 {
-			// Extract server caps (32-bit big-endian at offset 4)
-			serverCaps := uint32(data[4])<<24 | uint32(data[5])<<16 | uint32(data[6])<<8 | uint32(data[7])
+		// ServerCaps: [127, 0, len_hi, len_lo, caps_bytes...]
+		if len(data) < 8 {
+			return
+		}
+		caps := uint32(data[4])<<24 | uint32(data[5])<<16 | uint32(data[6])<<8 | uint32(data[7])
+		log.Printf("[DEBUG] WMKS ServerCaps: 0x%08x (ack=%v, heartbeat=%v, clientCaps=%v)",
+			caps, caps&serverCapUpdateAck != 0, caps&serverCapHeartbeat != 0, caps&serverCapClientCaps != 0)
 
-			log.Printf("[DEBUG] WMKS received ServerCaps: 0x%08x", serverCaps)
+		// Track whether server expects frame update ACKs
+		if caps&serverCapUpdateAck != 0 {
+			c.useVMWAck = true
+		}
 
-			// Check if server supports heartbeat (bit 65536 = 0x10000)
-			const serverCapHeartbeat = 0x10000
-			if serverCaps&serverCapHeartbeat != 0 {
-				log.Printf("[DEBUG] Server supports heartbeat, sending ClientCaps")
-				c.sendClientCaps()
-			}
+		// Send ClientCaps when server advertises it supports receiving them
+		// (wmks.js checks serverCapClientCaps bit, not serverCapHeartbeat)
+		if caps&serverCapClientCaps != 0 {
+			c.sendClientCaps()
 		}
 
 	case msgVMWHeartbeat:
-		// Heartbeat message - just log it
+		// Server heartbeat (server→client only, no response needed per wmks.js)
 		if len(data) >= 6 {
 			value := uint16(data[4])<<8 | uint16(data[5])
-			log.Printf("[DEBUG] WMKS received heartbeat: %d (elapsed=%s)", value, time.Since(c.connectedAt))
+			log.Printf("[DEBUG] WMKS heartbeat: %d (elapsed=%s)", value, time.Since(c.connectedAt))
 		}
 	}
+}
+
+// writeMessage sends a WebSocket binary message with mutex protection.
+// Must be used for ALL writes after the handshake, since the reader goroutine
+// and main goroutine may write concurrently.
+func (c *WMKSClient) writeMessage(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
 // sendClientCaps sends the VMware ClientCaps message advertising heartbeat support
 func (c *WMKSClient) sendClientCaps() {
 	clientCaps := []byte{
 		127,  // msgVMWClientMessage
-		3,    // msgVMWClientCaps subtype
+		3,    // msgVMWClientCaps subtype (legacy path)
 		0, 8, // message length (8 bytes total) as big-endian uint16
 		0, 0, 1, 0, // capabilities: 256 (clientCapHeartbeat) as big-endian uint32
 	}
 
-	err := c.conn.WriteMessage(websocket.BinaryMessage, clientCaps)
+	err := c.writeMessage(clientCaps)
 	if err != nil {
 		log.Printf("[WARN] Failed to send ClientCaps: %v", err)
 		return
 	}
 
-	log.Printf("[DEBUG] WMKS sent ClientCaps with heartbeat support (cap=256)")
+	log.Printf("[DEBUG] WMKS sent ClientCaps with heartbeat support (caps=0x%04x)", clientCapHeartbeat)
+}
+
+// sendFBUpdateRequest sends a FramebufferUpdateRequest (RFB message type 3).
+// When incremental=true, the server only sends changed regions.
+func (c *WMKSClient) sendFBUpdateRequest(incremental bool) {
+	inc := byte(0)
+	if incremental {
+		inc = 1
+	}
+	req := []byte{
+		3, inc, // type=FBUpdateRequest, incremental flag
+		0, 0, 0, 0, // x=0, y=0
+		byte(c.fbWidth >> 8), byte(c.fbWidth),
+		byte(c.fbHeight >> 8), byte(c.fbHeight),
+	}
+	if err := c.writeMessage(req); err != nil {
+		log.Printf("[WARN] Failed to send FBUpdateRequest: %v", err)
+	}
+}
+
+// sendAck sends a VMware frame update acknowledgment (client subtype 4).
+// The server expects these when serverCapUpdateAck is advertised.
+func (c *WMKSClient) sendAck() {
+	ack := []byte{
+		127, 4, // msgVMWClientMessage, subtype=4 (ACK)
+		0, 8,   // length=8
+		1, 0,   // mask=1, padding=0
+		byte(c.ackCounter >> 8), byte(c.ackCounter),
+	}
+	c.ackCounter++
+	if err := c.writeMessage(ack); err != nil {
+		log.Printf("[WARN] Failed to send frame ACK: %v", err)
+	}
 }
 
 // Close closes the WebSocket connection
@@ -537,7 +612,7 @@ func (c *WMKSClient) SendKeyEvent(scanCode int, down bool) error {
 	}
 	msg[7] = 0 // flags
 
-	err := c.conn.WriteMessage(websocket.BinaryMessage, msg)
+	err := c.writeMessage(msg)
 	if err != nil {
 		elapsed := time.Since(c.connectedAt)
 		timeSinceLastWrite := time.Since(c.lastWriteTime)
