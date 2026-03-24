@@ -259,6 +259,7 @@ func (c *WMKSClient) Connect() error {
 		defer func() {
 			recover() // Recover from panic if connection is closed while reading
 		}()
+		consecutiveErrors := 0
 		for {
 			select {
 			case <-c.stopReader:
@@ -282,8 +283,16 @@ func (c *WMKSClient) Connect() error {
 						time.Since(c.connectedAt), c.keysPressed, c.bytesWritten, err)
 					return
 				}
-				continue // timeout — keep polling
+				// Track consecutive non-timeout errors to detect dead connections
+				if !isTimeoutError(err) {
+					consecutiveErrors++
+					if consecutiveErrors >= 3 {
+						log.Printf("[WARN] WMKS reader: %d consecutive errors, connection likely dead: %v", consecutiveErrors, err)
+					}
+				}
+				continue
 			}
+			consecutiveErrors = 0
 			if msgType != websocket.BinaryMessage || len(data) == 0 {
 				continue
 			}
@@ -291,14 +300,15 @@ func (c *WMKSClient) Connect() error {
 			if len(data) >= 2 && data[0] == msgTypeBinary {
 				// VMware protocol message (type 127)
 				c.handleServerMessage(data)
-			} else if data[0] == 0 {
-				// FramebufferUpdate (RFB message type 0)
-				// Send ACK if server expects it, then request more updates
-				if c.useVMWAck {
-					c.sendAck()
+			} else {
+				// Standard RFB message (FramebufferUpdate=0, etc.) - just drain
+				logLen := len(data)
+				if logLen > 20 {
+					logLen = 20
 				}
+				log.Printf("[DEBUG] WMKS RFB message: type=%d len=%d first_bytes=%v",
+					data[0], len(data), data[:logLen])
 			}
-			// Other RFB messages (SetColourMapEntries=1, Bell=2, ServerCutText=3) are ignored
 		}
 	}()
 
@@ -495,10 +505,14 @@ func (c *WMKSClient) handleServerMessage(data []byte) {
 			c.useVMWAck = true
 		}
 
-		// Send ClientCaps when server advertises it supports receiving them
-		// (wmks.js checks serverCapClientCaps bit, not serverCapHeartbeat)
-		if caps&serverCapClientCaps != 0 {
+		// Only send ClientCaps if server supports both receiving them AND heartbeat.
+		// Sending ClientCaps with just heartbeat bit when server doesn't support
+		// heartbeat caused immediate connection close on VCD 10.6.
+		if caps&serverCapClientCaps != 0 && caps&serverCapHeartbeat != 0 {
 			c.sendClientCaps()
+		} else {
+			log.Printf("[DEBUG] WMKS skipping ClientCaps (clientCaps=%v, heartbeat=%v)",
+				caps&serverCapClientCaps != 0, caps&serverCapHeartbeat != 0)
 		}
 
 	case msgVMWHeartbeat:
@@ -753,6 +767,14 @@ func charToScanCode(char rune) (scanCode int, shift bool) {
 	default:
 		return 0, false
 	}
+}
+
+// isTimeoutError checks if an error is a network timeout (as opposed to a real error)
+func isTimeoutError(err error) bool {
+	if ne, ok := err.(interface{ Timeout() bool }); ok {
+		return ne.Timeout()
+	}
+	return false
 }
 
 // SendSpecialKey sends a special key by name (e.g., "ENTER", "F1", "ESCAPE")
