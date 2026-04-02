@@ -300,14 +300,15 @@ func (c *WMKSClient) Connect() error {
 			if len(data) >= 2 && data[0] == msgTypeBinary {
 				// VMware protocol message (type 127)
 				c.handleServerMessage(data)
-			} else {
-				// Standard RFB message (FramebufferUpdate=0, etc.) - just drain
-				logLen := len(data)
-				if logLen > 20 {
-					logLen = 20
+			} else if data[0] == 0 {
+				// FramebufferUpdate (RFB type 0) — mirror wmks.js behavior:
+				// after each update, ACK it and request the next frame.
+				// This keeps bidirectional data flowing and satisfies server
+				// flow control (serverCapUpdateAck).
+				if c.useVMWAck {
+					c.sendAck()
 				}
-				log.Printf("[DEBUG] WMKS RFB message: type=%d len=%d first_bytes=%v",
-					data[0], len(data), data[:logLen])
+				c.sendFBUpdateRequest(true) // request next frame immediately
 			}
 		}
 	}()
