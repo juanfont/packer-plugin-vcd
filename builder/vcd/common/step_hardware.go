@@ -44,6 +44,17 @@ type HardwareConfig struct {
 	// instead of manual CPU and memory configuration. Mutually exclusive with
 	// CPUs and memory settings.
 	VMSizingPolicy string `mapstructure:"vm_sizing_policy"`
+
+	// Extra VM configuration entries applied via VCD's ExtraConfig API (the
+	// equivalent of VMware's `.vmx` settings). Keys and values are passed
+	// through as-is; values are strings even when they represent numbers.
+	//
+	// Example: set the SVGA video RAM to 128 MB:
+	//
+	//   extra_config = {
+	//     "svga.vramSize" = "134217728"
+	//   }
+	ExtraConfig map[string]string `mapstructure:"extra_config"`
 }
 
 func (c *HardwareConfig) Prepare() []error {

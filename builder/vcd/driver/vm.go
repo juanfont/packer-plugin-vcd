@@ -39,6 +39,7 @@ type VirtualMachine interface {
 	// Hardware configuration
 	ChangeCPU(cpuCount, coresPerSocket int) error
 	ChangeMemory(memoryMB int64) error
+	ChangeExtraConfig(entries map[string]string) error
 	SetTPM(enabled bool) error
 	SetBootOptions(bootDelayMs int, efiSecureBoot bool) error
 
@@ -304,6 +305,41 @@ func (v *VirtualMachineDriver) ChangeMemory(memoryMB int64) error {
 	err := v.vm.ChangeMemory(memoryMB)
 	if err != nil {
 		return fmt.Errorf("error changing memory: %w", err)
+	}
+	return nil
+}
+
+// ChangeExtraConfig sets the given key/value pairs on the VM's ExtraConfig
+// (the VCD equivalent of VMware's .vmx data). Existing keys not in the map are
+// left untouched; matching keys are overwritten. Pass-through: caller is
+// responsible for VMware-correct key names and value formats.
+func (v *VirtualMachineDriver) ChangeExtraConfig(entries map[string]string) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	existing, err := v.vm.GetExtraConfig()
+	if err != nil {
+		return fmt.Errorf("error retrieving existing extra config: %w", err)
+	}
+
+	merged := existing
+	for key, value := range entries {
+		updated := false
+		for i, ec := range merged {
+			if ec.Key == key {
+				merged[i].Value = value
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			merged = append(merged, &types.ExtraConfigMarshal{Key: key, Value: value})
+		}
+	}
+
+	if _, err := v.vm.UpdateExtraConfig(merged); err != nil {
+		return fmt.Errorf("error updating extra config: %w", err)
 	}
 	return nil
 }

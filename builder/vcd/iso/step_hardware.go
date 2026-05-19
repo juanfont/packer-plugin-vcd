@@ -84,6 +84,14 @@ func (s *StepHardware) Run(_ context.Context, state multistep.StateBag) multiste
 		}
 	}
 
+	if len(s.Config.ExtraConfig) > 0 {
+		ui.Sayf("Applying %d extra_config entries", len(s.Config.ExtraConfig))
+		if err := vm.ChangeExtraConfig(s.Config.ExtraConfig); err != nil {
+			state.Put("error", fmt.Errorf("error applying extra_config: %w", err))
+			return multistep.ActionHalt
+		}
+	}
+
 	// Refresh VM state after hardware changes
 	if err := vm.Refresh(); err != nil {
 		state.Put("error", fmt.Errorf("error refreshing VM after hardware changes: %w", err))
