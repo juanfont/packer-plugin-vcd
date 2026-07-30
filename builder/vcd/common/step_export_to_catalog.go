@@ -178,8 +178,26 @@ func (s *StepExportToCatalog) Run(_ context.Context, state multistep.StateBag) m
 		}
 	}
 
-	// Create vApp template from vApp
+	// Power off vApp (required for capture of GPU vApp)
+	ui.Sayf("Powering off (undeploy) vApp")
 	vappRef := vapp.(*govcd.VApp)
+	status, err := vappRef.GetStatus()
+	if err != nil {
+		state.Put("error", fmt.Errorf("  Error getting vApp status: %v", err))
+	} 
+
+	if status != "POWERED_OFF" && status != "RESOLVED" {
+		task, err := vappRef.Undeploy()
+		if err != nil {
+			state.Put("error", fmt.Errorf("  Note: undeploy returned: %v", err))
+		} else {
+			if err := task.WaitTaskCompletion(); err != nil {
+				state.Put("error", fmt.Errorf("  Error waiting for shutdown: %v", err))
+			} 
+		}
+	}
+
+	// Create vApp template from vApp
 	description := s.Config.Description
 	if description == "" {
 		description = fmt.Sprintf("Packer-built template from %s", vappRef.VApp.Name)
