@@ -142,10 +142,12 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 				Config: &b.config.CDConfig,
 			},
 
-			// Step 12: Upload modified ISO to catalog
+			// Step 12: Upload ISO to catalog. An unmodified ISO (no cd_content)
+			// is reused from iso_catalog when present; StepUploadISO never
+			// reuses a modified one, which embeds this build's IP.
 			&common.StepUploadISO{
-				CacheISO:       false, // Don't cache modified ISOs
-				CacheOverwrite: false,
+				CacheISO:       b.config.CatalogConfig.CacheISO,
+				CacheOverwrite: b.config.CatalogConfig.CacheOverwrite,
 			},
 
 			// Step 13: Mount ISO to VM

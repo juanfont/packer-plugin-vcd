@@ -33,6 +33,9 @@ type CatalogConfig struct {
 	// If true and using an existing catalog (iso_catalog), check if the ISO already exists
 	// before uploading. This enables reusing ISOs across multiple builds.
 	// Defaults to true when iso_catalog is specified.
+	// An ISO modified by cd_content/cd_files is never reused: it embeds per-build
+	// values (such as the VM's IP), so it is uploaded for every build and deleted
+	// from the catalog afterwards.
 	CacheISO bool `mapstructure:"cache_iso"`
 
 	// If true, overwrite existing cached ISO even if it exists in the catalog.

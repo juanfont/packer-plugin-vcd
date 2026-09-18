@@ -51,8 +51,17 @@ func (s *StepUploadISO) Run(_ context.Context, state multistep.StateBag) multist
 	}
 	ui.Sayf("Preparing to upload ISO: %s", mediaName)
 
+	isoModified := false
+	if v, ok := state.GetOk("iso_modified"); ok {
+		isoModified, _ = v.(bool)
+	}
+	tempCatalog := false
+	if v, ok := state.GetOk("temp_catalog"); ok {
+		tempCatalog, _ = v.(bool)
+	}
+
 	// Check if media already exists (cache check)
-	if s.CacheISO {
+	if shouldUseISOCache(s.CacheISO, isoModified, tempCatalog) {
 		existingMedia, err := catalog.GetMediaByName(mediaName, false)
 		if err == nil && existingMedia != nil {
 			if s.CacheOverwrite {
@@ -92,6 +101,16 @@ func (s *StepUploadISO) Run(_ context.Context, state multistep.StateBag) multist
 	return multistep.ActionContinue
 }
 
+// shouldUseISOCache reports whether an ISO already present in the catalog may
+// be reused instead of uploaded.
+//
+// A modified ISO (cd_content/cd_files) usually embeds per-build values such as
+// the VM's IP, so it is unique to this build: never look it up, and never leave
+// the decision to the caller. A temporary catalog is empty by construction.
+func shouldUseISOCache(cacheISO, isoModified, tempCatalog bool) bool {
+	return cacheISO && !isoModified && !tempCatalog
+}
+
 func (s *StepUploadISO) Cleanup(state multistep.StateBag) {
 	ui := state.Get("ui").(packersdk.Ui)
 
@@ -103,12 +122,23 @@ func (s *StepUploadISO) Cleanup(state multistep.StateBag) {
 		return
 	}
 
-	// For persistent catalogs, we don't delete cached ISOs
-	// This matches vsphere behavior - ISOs stay cached for future builds
 	wasUploaded, ok := state.GetOk("media_was_uploaded")
 	if !ok || !wasUploaded.(bool) {
 		return
 	}
+
+	// A modified ISO is unique to this build and can never be a cache hit, so
+	// leaving it in a persistent catalog only leaks storage (several GB per
+	// build). StepMountISO's cleanup has already ejected it.
+	if v, ok := state.GetOk("iso_modified"); ok {
+		if modified, _ := v.(bool); modified {
+			s.deleteUploadedMedia(state, ui)
+			return
+		}
+	}
+
+	// For persistent catalogs, we don't delete cached ISOs
+	// This matches vsphere behavior - ISOs stay cached for future builds
 
 	// If build was cancelled/halted and we want to clean up uploaded media
 	// from persistent catalogs, we could do it here. For now, leave cached.
@@ -117,5 +147,28 @@ func (s *StepUploadISO) Cleanup(state multistep.StateBag) {
 	if cancelled || halted {
 		mediaName, _ := state.GetOk("uploaded_media_name")
 		ui.Sayf("Build cancelled/halted. Uploaded ISO remains in catalog: %s", mediaName)
+	}
+}
+
+// deleteUploadedMedia removes the ISO this build uploaded. Failures are
+// reported, not fatal: the build result must not depend on cleanup.
+func (s *StepUploadISO) deleteUploadedMedia(state multistep.StateBag, ui packersdk.Ui) {
+	mediaRaw, ok := state.GetOk("uploaded_media")
+	if !ok {
+		return
+	}
+	media, ok := mediaRaw.(*govcd.Media)
+	if !ok || media == nil {
+		return
+	}
+	name, _ := state.GetOk("uploaded_media_name")
+	ui.Sayf("Deleting build-specific ISO from catalog: %v", name)
+	task, err := media.Delete()
+	if err != nil {
+		ui.Errorf("Could not delete ISO %v (remove it manually): %s", name, err)
+		return
+	}
+	if err := task.WaitTaskCompletion(); err != nil {
+		ui.Errorf("Could not delete ISO %v (remove it manually): %s", name, err)
 	}
 }
