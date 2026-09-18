@@ -19,9 +19,10 @@ import (
 // This catalog is used to upload and store the ISO image used to boot the VM.
 // For the output catalog where the final vApp template is exported, see ExportToCatalogConfig.
 type CatalogConfig struct {
-	// The name of an existing catalog to use for ISO upload.
+	// The name of a persistent catalog to use for ISO upload. It is created on
+	// first use if it does not exist, and never deleted by the plugin.
 	// If not set, a temporary catalog will be created and deleted after the build.
-	// Using an existing catalog enables ISO caching across builds.
+	// Using a persistent catalog enables ISO caching across builds.
 	// This catalog is separate from the output catalog where the final vApp template is exported.
 	ISOCatalog string `mapstructure:"iso_catalog"`
 
@@ -68,13 +69,18 @@ func (s *StepCreateTempCatalog) Run(_ context.Context, state multistep.StateBag)
 	ui := state.Get("ui").(packersdk.Ui)
 	d := state.Get("driver").(driver.Driver)
 
-	// If an existing catalog is specified, use it
+	// If a catalog is specified, use it, creating it on first use
 	if s.Config.ISOCatalog != "" {
-		ui.Sayf("Using existing ISO catalog: %s", s.Config.ISOCatalog)
-		catalog, err := d.GetCatalog(s.Config.ISOCatalog)
+		ui.Sayf("Using ISO catalog: %s", s.Config.ISOCatalog)
+		catalog, created, err := getOrCreateCatalog(d, s.Config.ISOCatalog, func() (*types.Reference, error) {
+			return s.resolveStorageProfile(state, d, ui)
+		})
 		if err != nil {
-			state.Put("error", fmt.Errorf("error getting catalog %s: %w", s.Config.ISOCatalog, err))
+			state.Put("error", err)
 			return multistep.ActionHalt
+		}
+		if created {
+			ui.Sayf("ISO catalog %s did not exist, created it (persistent, never deleted by Packer)", s.Config.ISOCatalog)
 		}
 		state.Put("catalog", catalog)
 		state.Put("catalog_name", s.Config.ISOCatalog)
@@ -86,31 +92,10 @@ func (s *StepCreateTempCatalog) Run(_ context.Context, state multistep.StateBag)
 	catalogName := fmt.Sprintf("%s%d", s.Config.TempCatalogPrefix, time.Now().UnixNano())
 	ui.Sayf("Creating temporary catalog: %s", catalogName)
 
-	// Get storage profile from VDC to ensure catalog storage is accessible
-	var storageProfileRef *types.Reference
-	if s.VDCName != "" {
-		vdc, err := d.GetVdc(s.VDCName)
-		if err != nil {
-			state.Put("error", fmt.Errorf("error getting VDC %s for storage profile: %w", s.VDCName, err))
-			return multistep.ActionHalt
-		}
-
-		// Use specified storage profile if provided, otherwise use VDC default
-		if s.StorageProfile != "" {
-			sp, err := vdc.FindStorageProfileReference(s.StorageProfile)
-			if err != nil {
-				state.Put("error", fmt.Errorf("error finding storage profile %s: %w", s.StorageProfile, err))
-				return multistep.ActionHalt
-			}
-			storageProfileRef = &sp
-			ui.Sayf("Using specified storage profile: %s", storageProfileRef.Name)
-		} else if vdc.Vdc.VdcStorageProfiles != nil && len(vdc.Vdc.VdcStorageProfiles.VdcStorageProfile) > 0 {
-			storageProfileRef = vdc.Vdc.VdcStorageProfiles.VdcStorageProfile[0]
-			ui.Sayf("Using VDC default storage profile: %s", storageProfileRef.Name)
-		}
-
-		// Store VDC in state for later steps
-		state.Put("vdc", vdc)
+	storageProfileRef, err := s.resolveStorageProfile(state, d, ui)
+	if err != nil {
+		state.Put("error", err)
+		return multistep.ActionHalt
 	}
 
 	adminCatalog, err := d.CreateCatalogWithStorageProfile(catalogName, "Temporary catalog for Packer ISO build", storageProfileRef)
@@ -135,6 +120,71 @@ func (s *StepCreateTempCatalog) Run(_ context.Context, state multistep.StateBag)
 
 	ui.Sayf("Temporary catalog created: %s", catalogName)
 	return multistep.ActionContinue
+}
+
+// resolveStorageProfile picks the storage profile a new catalog should live on:
+// the configured one, else the VDC default. It also stores the VDC in state for
+// later steps.
+func (s *StepCreateTempCatalog) resolveStorageProfile(state multistep.StateBag, d driver.Driver, ui packersdk.Ui) (*types.Reference, error) {
+	if s.VDCName == "" {
+		return nil, nil
+	}
+	vdc, err := d.GetVdc(s.VDCName)
+	if err != nil {
+		return nil, fmt.Errorf("error getting VDC %s for storage profile: %w", s.VDCName, err)
+	}
+	state.Put("vdc", vdc)
+
+	if s.StorageProfile != "" {
+		sp, err := vdc.FindStorageProfileReference(s.StorageProfile)
+		if err != nil {
+			return nil, fmt.Errorf("error finding storage profile %s: %w", s.StorageProfile, err)
+		}
+		ui.Sayf("Using specified storage profile: %s", sp.Name)
+		return &sp, nil
+	}
+	if vdc.Vdc.VdcStorageProfiles != nil && len(vdc.Vdc.VdcStorageProfiles.VdcStorageProfile) > 0 {
+		ref := vdc.Vdc.VdcStorageProfiles.VdcStorageProfile[0]
+		ui.Sayf("Using VDC default storage profile: %s", ref.Name)
+		return ref, nil
+	}
+	return nil, nil
+}
+
+// catalogStore is the slice of driver.Driver that getOrCreateCatalog needs.
+type catalogStore interface {
+	GetCatalog(name string) (*govcd.Catalog, error)
+	CreateCatalogWithStorageProfile(name, description string, storageProfileRef *types.Reference) (*govcd.AdminCatalog, error)
+}
+
+// getOrCreateCatalog returns the named catalog, creating it when it does not
+// exist. Only a "not found" lookup triggers creation; any other error (auth,
+// network) is returned as is. Builds often start in parallel, so losing the
+// creation race to another build is expected: whatever the create call says,
+// the catalog is looked up again and used if it is there.
+func getOrCreateCatalog(store catalogStore, name string, storageProfile func() (*types.Reference, error)) (catalog *govcd.Catalog, created bool, err error) {
+	catalog, err = store.GetCatalog(name)
+	if err == nil {
+		return catalog, false, nil
+	}
+	if !govcd.ContainsNotFound(err) {
+		return nil, false, fmt.Errorf("error getting catalog %s: %w", name, err)
+	}
+
+	spRef, err := storageProfile()
+	if err != nil {
+		return nil, false, err
+	}
+	_, createErr := store.CreateCatalogWithStorageProfile(name, "ISO cache for Packer builds", spRef)
+
+	catalog, err = store.GetCatalog(name)
+	if err != nil {
+		if createErr != nil {
+			return nil, false, fmt.Errorf("catalog %s does not exist and could not be created: %w", name, createErr)
+		}
+		return nil, false, fmt.Errorf("error getting created catalog %s: %w", name, err)
+	}
+	return catalog, createErr == nil, nil
 }
 
 func (s *StepCreateTempCatalog) Cleanup(state multistep.StateBag) {

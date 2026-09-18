@@ -1,8 +1,9 @@
 <!-- Code generated from the comments of the CatalogConfig struct in builder/vcd/common/step_create_temp_catalog.go; DO NOT EDIT MANUALLY -->
 
-- `iso_catalog` (string) - The name of an existing catalog to use for ISO upload.
+- `iso_catalog` (string) - The name of a persistent catalog to use for ISO upload. It is created on
+  first use if it does not exist, and never deleted by the plugin.
   If not set, a temporary catalog will be created and deleted after the build.
-  Using an existing catalog enables ISO caching across builds.
+  Using a persistent catalog enables ISO caching across builds.
   This catalog is separate from the output catalog where the final vApp template is exported.
 
 - `temp_catalog_prefix` (string) - Prefix for temporary catalog names when creating a new catalog.
